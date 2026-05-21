@@ -1,0 +1,18 @@
+cd client
+gcc main.c logic/jugador.c logic/bala.c interface/render.c -o juego $(sdl2-config --cflags --libs) -mwindows
+ ./juego
+
+
+//para debugear
+
+///printf("x: %d\n", jugador.x);
+///fflush(stdout);
+
+
+cd client
+gcc main.c logic/jugador.c interface/render.c -o juego $(sdl2-config --cflags --libs)
+./juego.exe > log.txt 2>&1
+
+//Terminal 2
+
+tail -f client/log.txt
