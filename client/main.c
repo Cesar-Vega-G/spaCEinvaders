@@ -3,6 +3,7 @@
 #include "logic/jugador.h"
 #include "interface/render.h"
 #include "logic/bala.h"
+#include "logic/enemigo.h"
 
 int main(int argc, char* argv[]) {
 
@@ -44,6 +45,7 @@ int main(int argc, char* argv[]) {
 
     //CREAR BALA
     Bala bala = crearBala();
+    BloqueEnemigos bloque = crearBloque();
 
 
     // ── 5. GAME LOOP ────────────────────────────────────
@@ -51,11 +53,13 @@ int main(int argc, char* argv[]) {
     SDL_Event evento;
 
     while (jugando) {
-    moverJugador(&jugador, &bala, &evento, &jugando);
-    actualizarBala(&bala);
-    renderizarTodo(renderizador, &jugador, &bala);
-    SDL_Delay(1000 / FPS_OBJETIVO);
-}
+        moverJugador(&jugador, &bala, &evento, &jugando);
+        actualizarBala(&bala);
+        actualizarBloque(&bloque);
+        renderizarTodo(renderizador, &jugador, &bala, &bloque);
+        SDL_Delay(1000 / FPS_OBJETIVO);
+    }
+    
     // ── 6. LIMPIAR ──────────────────────────────────────
     SDL_DestroyRenderer(renderizador);
     SDL_DestroyWindow(ventana);
