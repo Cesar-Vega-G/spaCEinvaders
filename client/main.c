@@ -4,6 +4,7 @@
 #include "interface/render.h"
 #include "logic/bala.h"
 #include "logic/enemigo.h"
+#include "logic/ovni.h"
 
 int main(int argc, char* argv[]) {
 
@@ -47,18 +48,32 @@ int main(int argc, char* argv[]) {
     Bala bala = crearBala();
     BloqueEnemigos bloque = crearBloque();
 
+    Ovni ovni = crearOvni();
+    
+    
+
 
     // ── 5. GAME LOOP ────────────────────────────────────
     int jugando = 1;
     SDL_Event evento;
 
-    while (jugando) {
-        moverJugador(&jugador, &bala, &evento, &jugando);
-        actualizarBala(&bala);
-        actualizarBloque(&bloque);
-        renderizarTodo(renderizador, &jugador, &bala, &bloque);
-        SDL_Delay(1000 / FPS_OBJETIVO);
+    //Ovni
+    int contadorOvni = 0;
+  
+while (jugando) {
+    moverJugador(&jugador, &bala, &evento, &jugando);
+    actualizarBala(&bala);
+    actualizarBloque(&bloque);
+    renderizarTodo(renderizador, &jugador, &bala, &bloque, &ovni);
+    actualizarOvni(&ovni);
+    SDL_Delay(1000 / FPS_OBJETIVO);
+
+    contadorOvni++;
+    if (contadorOvni >= 300) {    // 300 frames = 10 segundos a 30 FPS
+        aparecerOvni(&ovni);
+        contadorOvni = 0;
     }
+}
     
     // ── 6. LIMPIAR ──────────────────────────────────────
     SDL_DestroyRenderer(renderizador);

@@ -5,7 +5,8 @@
 #include "../logic/jugador.h"
 #include "../logic/bala.h"
 #include "../logic/enemigo.h"
+#include "../logic/ovni.h"
 
-void renderizarTodo(SDL_Renderer* renderizador, Jugador* jugador, Bala* bala, BloqueEnemigos* bloque);
+void renderizarTodo(SDL_Renderer* renderizador, Jugador* jugador, Bala* bala, BloqueEnemigos* bloque, Ovni* ovni);
 
 #endif

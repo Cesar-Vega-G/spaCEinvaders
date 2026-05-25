@@ -1,8 +1,6 @@
 #include "render.h"
-#include "../logic/bala.h"
-#include "../logic/bala.h"
-// ── RENDERIZAR TODO ─────────────────────────────────
-void renderizarTodo(SDL_Renderer* renderizador, Jugador* jugador, Bala* bala, BloqueEnemigos* bloque) {
+
+void renderizarTodo(SDL_Renderer* renderizador, Jugador* jugador, Bala* bala, BloqueEnemigos* bloque, Ovni* ovni) {
 
     // Fondo negro
     SDL_SetRenderDrawColor(renderizador, 0, 0, 0, 255);
@@ -18,7 +16,7 @@ void renderizarTodo(SDL_Renderer* renderizador, Jugador* jugador, Bala* bala, Bl
         SDL_RenderFillRect(renderizador, &bala->rect);
     }
 
-    // Enemigos — cada tipo con su color
+    // Enemigos
     for (int fila = 0; fila < FILAS_ENEMIGOS; fila++) {
         for (int col = 0; col < COLUMNAS_ENEMIGOS; col++) {
             if (bloque->enemigos[fila][col].activo) {
@@ -26,13 +24,17 @@ void renderizarTodo(SDL_Renderer* renderizador, Jugador* jugador, Bala* bala, Bl
                     case TIPO_CALAMAR:        SDL_SetRenderDrawColor(renderizador, 255, 0,   0,   255); break;
                     case TIPO_CANGREJO:       SDL_SetRenderDrawColor(renderizador, 0,   255, 0,   255); break;
                     case TIPO_PULPO:          SDL_SetRenderDrawColor(renderizador, 0,   0,   255, 255); break;
-                    case TIPO_EXTRATERRESTRE: SDL_SetRenderDrawColor(renderizador, 255, 0,   255, 255); break;
                 }
                 SDL_RenderFillRect(renderizador, &bloque->enemigos[fila][col].rect);
             }
         }
     }
 
-    // Mostrar en pantalla
+    // OVNI
+    if (ovni->activo == 1) {
+        SDL_SetRenderDrawColor(renderizador, 255, 50, 50, 255);
+        SDL_RenderFillRect(renderizador, &ovni->rect);
+    }
+
     SDL_RenderPresent(renderizador);
 }
