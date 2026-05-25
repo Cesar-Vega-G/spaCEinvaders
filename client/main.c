@@ -5,6 +5,8 @@
 #include "logic/bala.h"
 #include "logic/enemigo.h"
 #include "logic/ovni.h"
+#include "logic/colisiones.h"
+#include "comunicacion/socket_cliente.h"
 
 int main(int argc, char* argv[]) {
 
@@ -29,7 +31,6 @@ int main(int argc, char* argv[]) {
         SDL_Quit();
         return 1;
     }
-/////////////////////////////////////////////////////////////////////////////////////////////////
 
     // ── 3. CREAR RENDERER ───────────────────────────────
     SDL_Renderer* renderizador = SDL_CreateRenderer(ventana, -1, SDL_RENDERER_ACCELERATED);
@@ -40,42 +41,42 @@ int main(int argc, char* argv[]) {
         SDL_Quit();
         return 1;
     }
-/////////////////////////////////////////////////////////////////////////////////////////////////
-    // ── 4. CREAR JUGADOR ────────────────────────────────
+
+    // ── 4. CREAR ENTIDADES ──────────────────────────────
     Jugador jugador = crearJugador();
-
-    //CREAR BALA
-    Bala bala = crearBala();
+    Bala bala       = crearBala();
     BloqueEnemigos bloque = crearBloque();
+    Ovni ovni       = crearOvni();
 
-    Ovni ovni = crearOvni();
-    
-    
-
+    // ── 4b. CONEXION AL SERVIDOR ────────────────────────
+    Conexion conexion = crearConexion();
+    conectarServidor(&conexion, "127.0.0.1", 5000);
 
     // ── 5. GAME LOOP ────────────────────────────────────
-    int jugando = 1;
+    int jugando      = 1;
+    int contadorOvni = 0;
+    int puntaje      = 0;
     SDL_Event evento;
 
-    //Ovni
-    int contadorOvni = 0;
-  
-while (jugando) {
-    moverJugador(&jugador, &bala, &evento, &jugando);
-    actualizarBala(&bala);
-    actualizarBloque(&bloque);
-    renderizarTodo(renderizador, &jugador, &bala, &bloque, &ovni);
-    actualizarOvni(&ovni);
-    SDL_Delay(1000 / FPS_OBJETIVO);
+    while (jugando) {
+        moverJugador(&jugador, &bala, &evento, &jugando, &conexion);
+        actualizarBala(&bala);
+        actualizarBloque(&bloque);
+        actualizarOvni(&ovni);
+        verificarColisionesBalaEnemigos(&bala, &bloque, &puntaje);
+        verificarColisionBalaOvni(&bala, &ovni, &puntaje);
+        renderizarTodo(renderizador, &jugador, &bala, &bloque, &ovni);
+        SDL_Delay(1000 / FPS_OBJETIVO);
 
-    contadorOvni++;
-    if (contadorOvni >= 300) {    // 300 frames = 10 segundos a 30 FPS
-        aparecerOvni(&ovni);
-        contadorOvni = 0;
+        contadorOvni++;
+        if (contadorOvni >= 600 && ovni.activo == 0) {
+            aparecerOvni(&ovni);
+            contadorOvni = 0;
+        }
     }
-}
-    
+
     // ── 6. LIMPIAR ──────────────────────────────────────
+    cerrarConexion(&conexion);
     SDL_DestroyRenderer(renderizador);
     SDL_DestroyWindow(ventana);
     SDL_Quit();

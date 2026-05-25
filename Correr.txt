@@ -1,5 +1,5 @@
 cd client
-gcc main.c logic/jugador.c logic/bala.c logic/enemigo.c logic/ovni.c interface/render.c -o juego $(sdl2-config --cflags --libs) -mwindows
+gcc main.c logic/jugador.c logic/bala.c logic/enemigo.c logic/ovni.c logic/colisiones.c comunicacion/socket_cliente.c interface/render.c -o juego $(sdl2-config --cflags --libs) -lws2_32 -mwindows
  ./juego
 
 
