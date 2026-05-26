@@ -2,19 +2,20 @@
 #define SOCKET_CLIENTE_H
 
 #include <winsock2.h>
+#include <SDL2/SDL.h>
 #include "../constantes.h"
 
-// ── STRUCT CONEXION ─────────────────────────────────
 typedef struct {
     SOCKET socket;
     int conectado;
-    int idJugador;
+    int idJugador;   // 0 = jugador, -1 = espectador
+    int esEspectador;
 } Conexion;
 
-// ── FUNCIONES ───────────────────────────────────────
 Conexion crearConexion();
-int conectarServidor(Conexion* conexion, const char* ip, int puerto);
+int  conectarServidor(Conexion* conexion, const char* ip, int puerto);
 void enviarMensaje(Conexion* conexion, const char* mensaje);
+int  recibirEstado(Conexion* conexion, char* buffer, int tamano);
 void cerrarConexion(Conexion* conexion);
 
 #endif

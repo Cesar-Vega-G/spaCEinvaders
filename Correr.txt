@@ -1,18 +1,73 @@
+============================
+  spaCEinvaders — Comandos
+============================
+
+Usa Git Bash para compilar el cliente C.
+Usa PowerShell para compilar el servidor Java.
+
+
+── CLIENTE C — Git Bash ─────────────────────────────────────────────────────
+
 cd client
-gcc main.c logic/jugador.c logic/bala.c logic/enemigo.c logic/ovni.c logic/colisiones.c comunicacion/socket_cliente.c interface/render.c -o juego $(sdl2-config --cflags --libs) -lws2_32 -mwindows
- ./juego
+
+gcc main.c \
+    logica/jugador.c \
+    logica/bala.c \
+    logica/enemigo.c \
+    logica/ovni.c \
+    control/input.c \
+    comunicacion/socket_cliente.c \
+    comunicacion/parser.c \
+    interfaz/render.c \
+    -o juego \
+    $(sdl2-config --cflags --libs) -lws2_32 -mwindows
+
+./juego.exe
 
 
-//para debugear
+── SERVIDOR JAVA — PowerShell ───────────────────────────────────────────────
 
-///printf("x: %d\n", jugador.x);
-///fflush(stdout);
+cd C:\Users\cesar\Documents\2026-S1\Paradigmas\spaCEinvaders\server
+
+Stop-Process -Name "java" -Force -ErrorAction SilentlyContinue
+javac -d out (Get-ChildItem -Recurse src -Filter *.java | % { $_.FullName })
+"Main-Class: servidor.Main" | Out-File -Encoding ASCII manifest.txt
+jar cfm servidor.jar manifest.txt -C out .
+java -jar servidor.jar
 
 
-cd client
-gcc main.c logic/jugador.c interface/render.c -o juego $(sdl2-config --cflags --libs)
-./juego.exe > log.txt 2>&1
+── ESTRUCTURA DEL PROYECTO (modelo MUC) ─────────────────────────────────────
 
-//Terminal 2
+client/
+  main.c                    Punto de entrada, game loop
+  constantes.h              Todas las constantes del juego
+  logica/                   Structs + inicializacion (sin logica de juego)
+    jugador.c/h
+    bala.c/h
+    enemigo.c/h
+    ovni.c/h
+  interfaz/                 Renderizado con SDL2
+    render.c/h
+  control/                  Captura de input, envia comandos al servidor
+    input.c/h
+  comunicacion/             Sockets + parser del protocolo
+    socket_cliente.c/h
+    parser.c/h
 
-tail -f client/log.txt
+server/
+  src/servidor/
+    Main.java
+    comunicacion/           Servidor.java, ClienteHandler.java
+    logica/                 EstadoJuego.java, EnemigoFactory.java, ObservadorEstado.java
+    logica/modelo/          Jugador.java, Bala.java, Enemigo.java, Ovni.java
+
+
+── COMANDOS ADMIN (en la consola del servidor mientras corre) ───────────────
+
+  CREAR x y tipo           Crea un enemigo extra. Ej: CREAR 300 200 PULPO
+  OVNI direccion puntos    Fuerza un OVNI. Ej: OVNI 1 500  (1=der, -1=izq)
+  VELOCIDAD n              Cambia velocidad del bloque. Ej: VELOCIDAD 8
+  BUNKERS porcentaje       (pendiente de implementar)
+
+  El OVNI tambien aparece solo cada ~20 segundos automaticamente.
+  Las carpetas logic/ e interface/ son las viejas — podas borrarlas del explorador.

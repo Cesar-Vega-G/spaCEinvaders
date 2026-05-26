@@ -1,17 +1,18 @@
 package servidor.logica;
 
-import servidor.logica.modelo.*;
 import java.util.*;
+import servidor.logica.modelo.*;
 
 /**
  * LÓGICA — Contiene todo el estado y reglas del juego.
  * El servidor Java es dueño de toda la lógica según el enunciado.
+ * Usa patrón Observer para notificar clientes y Factory para crear enemigos.
  */
 public class EstadoJuego {
 
     public static final int ANCHO_PANTALLA    = 1200;
     public static final int ALTO_PANTALLA     = 900;
-    public static final int FILAS             = 3;
+    public static final int FILAS             = 5;  // 1 calamar + 2 cangrejo + 2 pulpo
     public static final int COLUMNAS          = 11;
     public static final int ESPACIO_X         = 80;
     public static final int ESPACIO_Y         = 70;
@@ -19,42 +20,72 @@ public class EstadoJuego {
     public static final int INICIO_Y_ENEMIGOS = 80;
     public static final int BAJADA            = 40;
 
-    private List<Jugador> jugadores;
-    private List<Bala>    balas;
-    private Enemigo[][]   enemigos;
-    private Ovni          ovni;
+    private List<Jugador>        jugadores;
+    private List<Bala>           balas;
+    private Enemigo[][]          enemigos;
+    private List<Enemigo>        enemigosExtra;
+    private Ovni                 ovni;
+    private List<ObservadorEstado> observadores;
 
-    private int  direccionBloque;
-    private int  velocidadBloque;
-    private int  contadorMovimiento;
-    private int  intervaloMovimiento;
+    private int     direccionBloque;
+    private int     velocidadBloque;
+    private int     contadorMovimiento;
+    private int     intervaloMovimiento;
     private boolean juegoActivo;
 
+    // ── OVNI automático ─────────────────────────────────
+    // El OVNI aparece solo cada INTERVALO_OVNI frames (~20 seg a 30fps)
+    private int  contadorOvni;
+    private static final int INTERVALO_OVNI = 600;
+
     public EstadoJuego() {
-        jugadores            = new ArrayList<>();
-        balas                = new ArrayList<>();
-        ovni                 = new Ovni();
-        direccionBloque      = 1;
-        velocidadBloque      = 5;
-        contadorMovimiento   = 0;
-        intervaloMovimiento  = 10;
-        juegoActivo          = true;
+        jugadores           = new ArrayList<>();
+        balas               = new ArrayList<>();
+        observadores        = new ArrayList<>();
+        enemigosExtra       = new ArrayList<>();
+        ovni                = new Ovni();
+        direccionBloque     = 1;
+        velocidadBloque     = 5;
+        contadorMovimiento  = 0;
+        intervaloMovimiento = 10;
+        juegoActivo         = true;
+        contadorOvni        = 0;
         inicializarEnemigos();
     }
 
+    // ── PATRÓN OBSERVER ─────────────────────────────────
+    public synchronized void agregarObservador(ObservadorEstado obs) {
+        observadores.add(obs);
+    }
+
+    public synchronized void eliminarObservador(ObservadorEstado obs) {
+        observadores.remove(obs);
+        // Si no quedan observadores, resetear la partida para que otro jugador pueda entrar
+        if (observadores.isEmpty()) {
+            jugadores.clear();
+            balas.clear();
+            contadorOvni = 0;
+            juegoActivo  = true;
+            inicializarEnemigos();
+            System.out.println("[PARTIDA] Jugador desconectado — partida reseteada.");
+        }
+    }
+
+    private void notificarObservadores(String estado) {
+        for (ObservadorEstado obs : observadores)
+            obs.actualizar(estado);
+    }
+
+    // ── INICIALIZAR ENEMIGOS (usa Factory) ──────────────
     private void inicializarEnemigos() {
         enemigos = new Enemigo[FILAS][COLUMNAS];
-        Enemigo.Tipo[] tipos = {
-            Enemigo.Tipo.CALAMAR,
-            Enemigo.Tipo.CANGREJO,
-            Enemigo.Tipo.PULPO
-        };
         for (int f = 0; f < FILAS; f++)
             for (int c = 0; c < COLUMNAS; c++)
-                enemigos[f][c] = new Enemigo(
+                enemigos[f][c] = EnemigoFactory.crearPorFila(
+                    f,
                     INICIO_X_ENEMIGOS + c * ESPACIO_X,
                     INICIO_Y_ENEMIGOS + f * ESPACIO_Y,
-                    tipos[f], f, c
+                    c
                 );
     }
 
@@ -71,9 +102,23 @@ public class EstadoJuego {
         if (!juegoActivo) return;
         moverBloque();
         for (Bala b : balas) b.actualizar();
+        actualizarOvniAutomatico();
         ovni.actualizar(ANCHO_PANTALLA);
         verificarColisiones();
         verificarFinJuego();
+        notificarObservadores(serializar());
+    }
+
+    // Aparece solo cada INTERVALO_OVNI frames; dirección aleatoria, puntos aleatorios
+    private void actualizarOvniAutomatico() {
+        if (ovni.isActivo()) { contadorOvni = 0; return; }
+        contadorOvni++;
+        if (contadorOvni >= INTERVALO_OVNI) {
+            contadorOvni = 0;
+            int dir    = (Math.random() < 0.5) ? 1 : -1;
+            int puntos = (int)(Math.random() * 6 + 1) * 50; // 50-300
+            ovni.aparecer(ANCHO_PANTALLA, dir, puntos);
+        }
     }
 
     private void moverBloque() {
@@ -82,14 +127,21 @@ public class EstadoJuego {
         contadorMovimiento = 0;
 
         boolean borde = false;
+        int dx = velocidadBloque * direccionBloque;
+
+        // Mover grilla principal
         for (int f = 0; f < FILAS; f++)
             for (int c = 0; c < COLUMNAS; c++)
                 if (enemigos[f][c].isActivo()) {
-                    enemigos[f][c].mover(velocidadBloque * direccionBloque, 0);
+                    enemigos[f][c].mover(dx, 0);
                     if (enemigos[f][c].getX() <= 0 ||
                         enemigos[f][c].getX() + Enemigo.ANCHO >= ANCHO_PANTALLA)
                         borde = true;
                 }
+
+        // Mover enemigos extra creados por admin (se mueven con el bloque)
+        for (Enemigo e : enemigosExtra)
+            if (e.isActivo()) e.mover(dx, 0);
 
         if (borde) {
             direccionBloque *= -1;
@@ -97,6 +149,9 @@ public class EstadoJuego {
                 for (int c = 0; c < COLUMNAS; c++)
                     if (enemigos[f][c].isActivo())
                         enemigos[f][c].mover(0, BAJADA);
+            // Extras también bajan
+            for (Enemigo e : enemigosExtra)
+                if (e.isActivo()) e.mover(0, BAJADA);
         }
     }
 
@@ -105,6 +160,7 @@ public class EstadoJuego {
             if (!bala.isActiva()) continue;
             Jugador jugador = jugadores.get(bala.getIdJugador());
 
+            // Colisión con enemigos de la formación
             for (int f = 0; f < FILAS; f++)
                 for (int c = 0; c < COLUMNAS; c++) {
                     Enemigo e = enemigos[f][c];
@@ -117,6 +173,16 @@ public class EstadoJuego {
                     }
                 }
 
+            // Colisión con enemigos extra (creados por admin)
+            for (Enemigo e : enemigosExtra)
+                if (e.colisionaCon(bala.getX(), bala.getY(), Bala.ANCHO, Bala.ALTO)) {
+                    jugador.sumarPuntaje(e.getPuntos());
+                    e.destruir();
+                    bala.desactivar();
+                    return;
+                }
+
+            // Colisión con OVNI
             if (ovni.colisionaCon(bala.getX(), bala.getY(), Bala.ANCHO, Bala.ALTO)) {
                 jugador.sumarPuntaje(ovni.getPuntos());
                 ovni.destruir();
@@ -162,8 +228,10 @@ public class EstadoJuego {
     }
 
     // ── COMANDOS ADMINISTRADOR ──────────────────────────
-    public synchronized void crearEnemigo(int x, int y, int puntos) {
-        System.out.println("Enemigo creado en (" + x + "," + y + ") pts=" + puntos);
+    public synchronized void crearEnemigo(int x, int y, String tipo) {
+        Enemigo nuevo = EnemigoFactory.crear(tipo, x, y, FILAS, 0);
+        enemigosExtra.add(nuevo);
+        System.out.println("Enemigo " + tipo + " creado en (" + x + "," + y + ")");
     }
 
     public synchronized void crearOvni(int direccion, int puntos) {
@@ -178,11 +246,17 @@ public class EstadoJuego {
     public synchronized String serializar() {
         StringBuilder sb = new StringBuilder();
         sb.append("INICIO_ESTADO\n");
-        for (Jugador j : jugadores) sb.append(j.serializar()).append("\n");
-        for (Bala b : balas)        sb.append(b.serializar()).append("\n");
+        for (Jugador j : jugadores)  sb.append(j.serializar()).append("\n");
+        for (Bala b : balas)         sb.append(b.serializar()).append("\n");
         for (int f = 0; f < FILAS; f++)
             for (int c = 0; c < COLUMNAS; c++)
                 sb.append(enemigos[f][c].serializar()).append("\n");
+        // Enemigos extra (creados por admin) — tag propio para no confundir con la grilla
+        for (int i = 0; i < enemigosExtra.size(); i++) {
+            Enemigo e = enemigosExtra.get(i);
+            sb.append(String.format("EXTRA %d %d %d %d %s",
+                i, e.getX(), e.getY(), e.isActivo() ? 1 : 0, e.getTipo().name())).append("\n");
+        }
         sb.append(ovni.serializar()).append("\n");
         sb.append("JUEGO_ACTIVO ").append(juegoActivo ? 1 : 0).append("\n");
         sb.append("FIN_ESTADO\n");

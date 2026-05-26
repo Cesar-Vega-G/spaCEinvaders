@@ -1,85 +1,83 @@
 #include <SDL2/SDL.h>
 #include "constantes.h"
-#include "logic/jugador.h"
-#include "interface/render.h"
-#include "logic/bala.h"
-#include "logic/enemigo.h"
-#include "logic/ovni.h"
-#include "logic/colisiones.h"
+
+// MUC — Logica / Interfaz / Control / Comunicacion
+#include "logica/jugador.h"
+#include "logica/bala.h"
+#include "logica/enemigo.h"
+#include "logica/ovni.h"
+#include "interfaz/render.h"
+#include "control/input.h"
 #include "comunicacion/socket_cliente.h"
+#include "comunicacion/parser.h"
 
 int main(int argc, char* argv[]) {
 
-    // ── 1. INICIALIZAR SDL ──────────────────────────────
+    // ── 1. SDL ───────────────────────────────────────────
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        SDL_Log("Error al iniciar SDL: %s", SDL_GetError());
+        SDL_Log("Error SDL: %s", SDL_GetError());
         return 1;
     }
 
-    // ── 2. CREAR VENTANA ────────────────────────────────
     SDL_Window* ventana = SDL_CreateWindow(
         TITULO_JUEGO,
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
-        ANCHO_PANTALLA,
-        ALTO_PANTALLA,
-        0
-    );
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        ANCHO_PANTALLA, ALTO_PANTALLA, 0);
+    if (!ventana) { SDL_Quit(); return 1; }
 
-    if (ventana == NULL) {
-        SDL_Log("Error al crear ventana: %s", SDL_GetError());
-        SDL_Quit();
-        return 1;
-    }
-
-    // ── 3. CREAR RENDERER ───────────────────────────────
     SDL_Renderer* renderizador = SDL_CreateRenderer(ventana, -1, SDL_RENDERER_ACCELERATED);
+    if (!renderizador) { SDL_DestroyWindow(ventana); SDL_Quit(); return 1; }
 
-    if (renderizador == NULL) {
-        SDL_Log("Error al crear renderizador: %s", SDL_GetError());
-        SDL_DestroyWindow(ventana);
-        SDL_Quit();
-        return 1;
-    }
+    // ── 2. ENTIDADES ─────────────────────────────────────
+    // Partida compartida: hasta 2 jugadores en el mismo juego.
+    // jugadores[0] = blanco, jugadores[1] = cyan.
+    Jugador jugadores[2];
+    jugadores[0] = crearJugador();
+    jugadores[1] = crearJugador();
 
-    // ── 4. CREAR ENTIDADES ──────────────────────────────
-    Jugador jugador = crearJugador();
-    Bala bala       = crearBala();
+    Bala balas[2];
+    balas[0] = crearBala();
+    balas[1] = crearBala();
+
     BloqueEnemigos bloque = crearBloque();
-    Ovni ovni       = crearOvni();
+    Ovni           ovni   = crearOvni();
 
-    // ── 4b. CONEXION AL SERVIDOR ────────────────────────
+    // ── 3. CONECTAR AL SERVIDOR ──────────────────────────
+    // Uso: ./juego.exe      → jugador
+    //      ./juego.exe s    → espectador
     Conexion conexion = crearConexion();
+    conexion.esEspectador = (argc > 1 && argv[1][0] == 's') ? 1 : 0;
     conectarServidor(&conexion, "127.0.0.1", 5000);
 
-    // ── 5. GAME LOOP ────────────────────────────────────
-    int jugando      = 1;
-    int contadorOvni = 0;
-    int puntaje      = 0;
+    // ── 4. GAME LOOP ─────────────────────────────────────
+    int jugando = 1;
     SDL_Event evento;
+    char buffer[8192];
 
     while (jugando) {
-        moverJugador(&jugador, &bala, &evento, &jugando, &conexion);
-        actualizarBala(&bala);
-        actualizarBloque(&bloque);
-        actualizarOvni(&ovni);
-        verificarColisionesBalaEnemigos(&bala, &bloque, &puntaje);
-        verificarColisionBalaOvni(&bala, &ovni, &puntaje);
-        renderizarTodo(renderizador, &jugador, &bala, &bloque, &ovni);
-        SDL_Delay(1000 / FPS_OBJETIVO);
-
-        contadorOvni++;
-        if (contadorOvni >= 600 && ovni.activo == 0) {
-            aparecerOvni(&ovni);
-            contadorOvni = 0;
+        // Control (espectador no envia comandos)
+        if (!conexion.esEspectador)
+            procesarInput(&evento, &jugando, &conexion);
+        else {
+            while (SDL_PollEvent(&evento))
+                if (evento.type == SDL_QUIT) jugando = 0;
         }
+
+        // Comunicacion
+        if (recibirEstado(&conexion, buffer, sizeof(buffer))) {
+            parsearEstado(buffer, &ovni, &bloque, jugadores, balas, &jugando, &conexion);
+        }
+
+        // Interfaz
+        renderizarTodo(renderizador, jugadores, balas, &bloque, &ovni);
+
+        SDL_Delay(1000 / FPS_OBJETIVO);
     }
 
-    // ── 6. LIMPIAR ──────────────────────────────────────
+    // ── 5. LIMPIAR ───────────────────────────────────────
     cerrarConexion(&conexion);
     SDL_DestroyRenderer(renderizador);
     SDL_DestroyWindow(ventana);
     SDL_Quit();
-
     return 0;
 }

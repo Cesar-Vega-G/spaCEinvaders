@@ -1,16 +1,17 @@
 package servidor.comunicacion;
 
-import servidor.logica.EstadoJuego;
-import servidor.logica.modelo.Jugador;
-
 import java.io.*;
 import java.net.Socket;
+import servidor.logica.EstadoJuego;
+import servidor.logica.ObservadorEstado;
+import servidor.logica.modelo.Jugador;
 
 /**
  * COMUNICACION — Maneja la conexión de un cliente individual.
- * Un hilo por cliente (jugador o espectador).
+ * Implementa ObservadorEstado (patrón Observer) para recibir
+ * actualizaciones del estado del juego automáticamente.
  */
-public class ClienteHandler implements Runnable {
+public class ClienteHandler implements Runnable, ObservadorEstado {
 
     private Socket socket;
     private EstadoJuego estado;
@@ -21,10 +22,10 @@ public class ClienteHandler implements Runnable {
     private boolean conectado;
 
     public ClienteHandler(Socket socket, EstadoJuego estado, boolean esEspectador) {
-        this.socket      = socket;
-        this.estado      = estado;
+        this.socket       = socket;
+        this.estado       = estado;
         this.esEspectador = esEspectador;
-        this.conectado   = true;
+        this.conectado    = true;
     }
 
     @Override
@@ -32,6 +33,9 @@ public class ClienteHandler implements Runnable {
         try {
             salida  = new PrintWriter(socket.getOutputStream(), true);
             entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+            // Suscribirse al estado del juego (patrón Observer)
+            estado.agregarObservador(this);
 
             if (!esEspectador) {
                 jugador = estado.agregarJugador();
@@ -50,6 +54,8 @@ public class ClienteHandler implements Runnable {
         } catch (IOException e) {
             System.out.println("[SERVIDOR] Cliente desconectado.");
         } finally {
+            // Desuscribirse al desconectarse
+            estado.eliminarObservador(this);
             cerrar();
         }
     }
@@ -61,6 +67,12 @@ public class ClienteHandler implements Runnable {
             case "DISPARAR":  estado.disparar(jugador.getId());        break;
             default: System.out.println("[SERVIDOR] Comando desconocido: " + mensaje);
         }
+    }
+
+    // ── PATRÓN OBSERVER — recibe notificación del estado ─
+    @Override
+    public void actualizar(String estadoSerializado) {
+        enviarEstado(estadoSerializado);
     }
 
     public void enviarEstado(String estadoSerializado) {
@@ -76,5 +88,7 @@ public class ClienteHandler implements Runnable {
         catch (IOException e) { /* ignorar */ }
     }
 
-    public boolean isConectado() { return conectado; }
+    public boolean isConectado()    { return conectado;    }
+    public boolean isEspectador()   { return esEspectador; }
+    public EstadoJuego getJuego()   { return estado;       }
 }
