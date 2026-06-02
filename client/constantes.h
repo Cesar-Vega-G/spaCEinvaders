@@ -37,4 +37,16 @@
 #define VELOCIDAD_OVNI 10 //////////
 #define DELAY_OVNI 3
 
+// ── BALAS ENEMIGAS ──────────────────────────────────
+#define MAX_BALAS_ENEMIGAS 4
+#define ANCHO_BALA_ENEMIGA  5
+#define ALTO_BALA_ENEMIGA  15
+
+// ── BUNKERS ─────────────────────────────────────────
+#define NUM_BUNKERS         4
+#define BUNKER_FILAS        3
+#define BUNKER_COLUMNAS     5
+#define BUNKER_LADO_BLOQUE  20
+#define BUNKER_TOTAL_BLOQUES (BUNKER_FILAS * BUNKER_COLUMNAS)
+
 #endif

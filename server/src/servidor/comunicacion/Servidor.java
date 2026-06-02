@@ -146,7 +146,10 @@ public class Servidor {
                         break;
                     case "BUNKERS":
                         // BUNKERS 70% | BUNKERS 40% | BUNKERS 0%
-                        System.out.println("[ADMIN] Bunkers: pendiente de implementar.");
+                        if (p.length >= 2) {
+                            String pct = p[1].replace("%", "").trim();
+                            partida.cambiarBunkers(Integer.parseInt(pct));
+                        }
                         break;
                     default:
                         System.out.println("Comando desconocido: " + linea);

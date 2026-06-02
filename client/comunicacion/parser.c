@@ -7,14 +7,16 @@ void parsearEstado(const char* estado,
                    BloqueEnemigos* bloque,
                    Jugador jugadores[],
                    Bala balas[],
+                   BalaEnemiga balasEnemigas[],
+                   Bunker bunkers[],
                    int* jugando,
                    Conexion* conexion) {
-    char linea[256];
+    char linea[512];
     const char* ptr = estado;
 
     while (*ptr) {
         int i = 0;
-        while (*ptr && *ptr != '\n' && i < 255) linea[i++] = *ptr++;
+        while (*ptr && *ptr != '\n' && i < 511) linea[i++] = *ptr++;
         linea[i] = '\0';
         if (*ptr == '\n') ptr++;
         if (i == 0) continue;
@@ -34,7 +36,6 @@ void parsearEstado(const char* estado,
         }
 
         // ── JUGADOR id x y vidas puntaje ─────────────────
-        // Hay hasta 2 jugadores (id=0 y id=1) en la misma partida.
         if (sscanf(linea, "JUGADOR %d %d %d %d %d", &id, &x, &y, &vidas, &puntos) == 5) {
             if (id == 0 || id == 1) {
                 jugadores[id].rect.x = x;
@@ -42,6 +43,17 @@ void parsearEstado(const char* estado,
                 jugadores[id].vidas   = vidas;
                 jugadores[id].puntaje = puntos;
                 jugadores[id].activo  = 1;
+            }
+            continue;
+        }
+
+        // ── BALA_ENEMIGA id x y activa ───────────────────
+        // (chequear ANTES que BALA porque "BALA" es prefijo)
+        if (sscanf(linea, "BALA_ENEMIGA %d %d %d %d", &id, &x, &y, &activo) == 4) {
+            if (id >= 0 && id < MAX_BALAS_ENEMIGAS) {
+                balasEnemigas[id].rect.x = x;
+                balasEnemigas[id].rect.y = y;
+                balasEnemigas[id].activa = activo;
             }
             continue;
         }
@@ -82,6 +94,28 @@ void parsearEstado(const char* estado,
                 if      (strcmp(tipo, "CALAMAR")  == 0) bloque->extras[idExtra].tipo = TIPO_CALAMAR;
                 else if (strcmp(tipo, "CANGREJO") == 0) bloque->extras[idExtra].tipo = TIPO_CANGREJO;
                 else                                    bloque->extras[idExtra].tipo = TIPO_PULPO;
+            }
+            continue;
+        }
+
+        // ── BUNKER id x y filas cols lado bitmap ─────────
+        int bid, bfilas, bcols, blado;
+        char bitmap[64];
+        if (sscanf(linea, "BUNKER %d %d %d %d %d %d %63s",
+                   &bid, &x, &y, &bfilas, &bcols, &blado, bitmap) == 7) {
+            if (bid >= 0 && bid < NUM_BUNKERS) {
+                bunkers[bid].x        = x;
+                bunkers[bid].y        = y;
+                bunkers[bid].filas    = bfilas;
+                bunkers[bid].columnas = bcols;
+                bunkers[bid].lado     = blado;
+                int idx = 0;
+                for (int f = 0; f < bfilas && f < BUNKER_FILAS; f++)
+                    for (int c = 0; c < bcols && c < BUNKER_COLUMNAS; c++) {
+                        if (bitmap[idx] == '\0') break;
+                        bunkers[bid].bloques[f][c] = (bitmap[idx] == '1') ? 1 : 0;
+                        idx++;
+                    }
             }
             continue;
         }

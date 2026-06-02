@@ -33,8 +33,10 @@ static void dibujarNumero(SDL_Renderer* r, int numero, int x, int y, int escala)
 void renderizarTodo(SDL_Renderer* renderizador,
                     Jugador jugadores[],
                     Bala balas[],
+                    BalaEnemiga balasEnemigas[],
                     BloqueEnemigos* bloque,
-                    Ovni* ovni) {
+                    Ovni* ovni,
+                    Bunker bunkers[]) {
 
     // Fondo negro
     SDL_SetRenderDrawColor(renderizador, 0, 0, 0, 255);
@@ -64,6 +66,13 @@ void renderizarTodo(SDL_Renderer* renderizador,
         SDL_RenderFillRect(renderizador, &balas[1].rect);
     }
 
+    // Balas enemigas (rojas)
+    SDL_SetRenderDrawColor(renderizador, 255, 60, 60, 255);
+    for (int i = 0; i < MAX_BALAS_ENEMIGAS; i++) {
+        if (balasEnemigas[i].activa)
+            SDL_RenderFillRect(renderizador, &balasEnemigas[i].rect);
+    }
+
     // Enemigos de la grilla principal
     for (int f = 0; f < FILAS_ENEMIGOS; f++) {
         for (int c = 0; c < COLUMNAS_ENEMIGOS; c++) {
@@ -88,6 +97,23 @@ void renderizarTodo(SDL_Renderer* renderizador,
             default:            SDL_SetRenderDrawColor(renderizador, 200, 200, 200, 255); break;
         }
         SDL_RenderFillRect(renderizador, &bloque->extras[i].rect);
+    }
+
+    // Bunkers (verdes, grilla de bloques destructibles)
+    SDL_SetRenderDrawColor(renderizador, 0, 220, 80, 255);
+    for (int i = 0; i < NUM_BUNKERS; i++) {
+        for (int f = 0; f < bunkers[i].filas && f < BUNKER_FILAS; f++) {
+            for (int c = 0; c < bunkers[i].columnas && c < BUNKER_COLUMNAS; c++) {
+                if (!bunkers[i].bloques[f][c]) continue;
+                SDL_Rect r = {
+                    bunkers[i].x + c * bunkers[i].lado,
+                    bunkers[i].y + f * bunkers[i].lado,
+                    bunkers[i].lado,
+                    bunkers[i].lado
+                };
+                SDL_RenderFillRect(renderizador, &r);
+            }
+        }
     }
 
     // OVNI (rojo brillante)

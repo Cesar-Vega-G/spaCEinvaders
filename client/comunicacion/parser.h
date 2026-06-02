@@ -5,6 +5,8 @@
 #include "../logica/enemigo.h"
 #include "../logica/jugador.h"
 #include "../logica/bala.h"
+#include "../logica/bala_enemiga.h"
+#include "../logica/bunker.h"
 #include "socket_cliente.h"
 
 // Parsea el estado que manda el servidor cada frame y actualiza las entidades.
@@ -15,6 +17,8 @@ void parsearEstado(const char* estado,
                    BloqueEnemigos* bloque,
                    Jugador jugadores[],
                    Bala balas[],
+                   BalaEnemiga balasEnemigas[],
+                   Bunker bunkers[],
                    int* jugando,
                    Conexion* conexion);
 

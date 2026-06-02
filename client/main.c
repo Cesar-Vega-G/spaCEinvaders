@@ -4,8 +4,10 @@
 // MUC — Logica / Interfaz / Control / Comunicacion
 #include "logica/jugador.h"
 #include "logica/bala.h"
+#include "logica/bala_enemiga.h"
 #include "logica/enemigo.h"
 #include "logica/ovni.h"
+#include "logica/bunker.h"
 #include "interfaz/render.h"
 #include "control/input.h"
 #include "comunicacion/socket_cliente.h"
@@ -39,6 +41,14 @@ int main(int argc, char* argv[]) {
     balas[0] = crearBala();
     balas[1] = crearBala();
 
+    BalaEnemiga balasEnemigas[MAX_BALAS_ENEMIGAS];
+    for (int i = 0; i < MAX_BALAS_ENEMIGAS; i++)
+        balasEnemigas[i] = crearBalaEnemiga();
+
+    Bunker bunkers[NUM_BUNKERS];
+    for (int i = 0; i < NUM_BUNKERS; i++)
+        bunkers[i] = crearBunker();
+
     BloqueEnemigos bloque = crearBloque();
     Ovni           ovni   = crearOvni();
 
@@ -52,7 +62,7 @@ int main(int argc, char* argv[]) {
     // ── 4. GAME LOOP ─────────────────────────────────────
     int jugando = 1;
     SDL_Event evento;
-    char buffer[8192];
+    char buffer[16384];
 
     while (jugando) {
         // Control (espectador no envia comandos)
@@ -65,11 +75,13 @@ int main(int argc, char* argv[]) {
 
         // Comunicacion
         if (recibirEstado(&conexion, buffer, sizeof(buffer))) {
-            parsearEstado(buffer, &ovni, &bloque, jugadores, balas, &jugando, &conexion);
+            parsearEstado(buffer, &ovni, &bloque, jugadores, balas,
+                          balasEnemigas, bunkers, &jugando, &conexion);
         }
 
         // Interfaz
-        renderizarTodo(renderizador, jugadores, balas, &bloque, &ovni);
+        renderizarTodo(renderizador, jugadores, balas, balasEnemigas,
+                       &bloque, &ovni, bunkers);
 
         SDL_Delay(1000 / FPS_OBJETIVO);
     }

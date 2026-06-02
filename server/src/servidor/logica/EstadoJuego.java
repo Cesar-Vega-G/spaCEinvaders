@@ -20,18 +20,31 @@ public class EstadoJuego {
     public static final int INICIO_Y_ENEMIGOS = 80;
     public static final int BAJADA            = 40;
 
+    // ── BUNKERS ─────────────────────────────────────────
+    public static final int NUM_BUNKERS = 4;
+    public static final int BUNKER_Y    = 700;   // arriba del jugador (y=810)
+
+    // ── BALAS ENEMIGAS ──────────────────────────────────
+    public static final int MAX_BALAS_ENEMIGAS = 4;
+    private static final int INTERVALO_DISPARO_ENEMIGO = 30; // ~1 seg a 30fps
+
     private List<Jugador>        jugadores;
     private List<Bala>           balas;
+    private List<BalaEnemiga>    balasEnemigas;
     private Enemigo[][]          enemigos;
     private List<Enemigo>        enemigosExtra;
     private Ovni                 ovni;
+    private List<Bunker>         bunkers;
     private List<ObservadorEstado> observadores;
 
     private int     direccionBloque;
     private int     velocidadBloque;
     private int     contadorMovimiento;
     private int     intervaloMovimiento;
+    private int     contadorDisparoEnemigo;
     private boolean juegoActivo;
+
+    private final Random random = new Random();
 
     // ── OVNI automático ─────────────────────────────────
     // El OVNI aparece solo cada INTERVALO_OVNI frames (~20 seg a 30fps)
@@ -41,16 +54,21 @@ public class EstadoJuego {
     public EstadoJuego() {
         jugadores           = new ArrayList<>();
         balas               = new ArrayList<>();
+        balasEnemigas       = new ArrayList<>();
         observadores        = new ArrayList<>();
         enemigosExtra       = new ArrayList<>();
+        bunkers             = new ArrayList<>();
         ovni                = new Ovni();
         direccionBloque     = 1;
         velocidadBloque     = 5;
         contadorMovimiento  = 0;
         intervaloMovimiento = 10;
+        contadorDisparoEnemigo = 0;
         juegoActivo         = true;
         contadorOvni        = 0;
         inicializarEnemigos();
+        inicializarBalasEnemigas();
+        inicializarBunkers();
     }
 
     // ── PATRÓN OBSERVER ─────────────────────────────────
@@ -64,9 +82,12 @@ public class EstadoJuego {
         if (observadores.isEmpty()) {
             jugadores.clear();
             balas.clear();
+            for (BalaEnemiga be : balasEnemigas) be.desactivar();
             contadorOvni = 0;
+            contadorDisparoEnemigo = 0;
             juegoActivo  = true;
             inicializarEnemigos();
+            inicializarBunkers();
             System.out.println("[PARTIDA] Jugador desconectado — partida reseteada.");
         }
     }
@@ -89,6 +110,23 @@ public class EstadoJuego {
                 );
     }
 
+    private void inicializarBalasEnemigas() {
+        balasEnemigas.clear();
+        for (int i = 0; i < MAX_BALAS_ENEMIGAS; i++)
+            balasEnemigas.add(new BalaEnemiga(i));
+    }
+
+    private void inicializarBunkers() {
+        bunkers.clear();
+        // 4 bunkers repartidos parejo en X.
+        // Espacio total ocupado = NUM_BUNKERS * ANCHO + (NUM_BUNKERS-1) * separacion
+        int separacion = (ANCHO_PANTALLA - NUM_BUNKERS * Bunker.ANCHO) / (NUM_BUNKERS + 1);
+        for (int i = 0; i < NUM_BUNKERS; i++) {
+            int x = separacion + i * (Bunker.ANCHO + separacion);
+            bunkers.add(new Bunker(i, x, BUNKER_Y));
+        }
+    }
+
     // ── AGREGAR JUGADOR ─────────────────────────────────
     public synchronized Jugador agregarJugador() {
         int id = jugadores.size();
@@ -99,11 +137,16 @@ public class EstadoJuego {
 
     // ── ACTUALIZAR (llamado cada frame) ─────────────────
     public synchronized void actualizar() {
-        if (!juegoActivo) return;
+        if (!juegoActivo) {
+            notificarObservadores(serializar());
+            return;
+        }
         moverBloque();
         for (Bala b : balas) b.actualizar();
+        for (BalaEnemiga be : balasEnemigas) be.actualizar(ALTO_PANTALLA);
         actualizarOvniAutomatico();
         ovni.actualizar(ANCHO_PANTALLA);
+        dispararEnemigoAutomatico();
         verificarColisiones();
         verificarFinJuego();
         notificarObservadores(serializar());
@@ -119,6 +162,44 @@ public class EstadoJuego {
             int puntos = (int)(Math.random() * 6 + 1) * 50; // 50-300
             ovni.aparecer(ANCHO_PANTALLA, dir, puntos);
         }
+    }
+
+    // Cada INTERVALO_DISPARO_ENEMIGO frames, un enemigo aleatorio de la fila
+    // de ARRIBA (la mas lejana al canon) dispara una bala enemiga.
+    // Solo si hay slot libre.
+    private void dispararEnemigoAutomatico() {
+        contadorDisparoEnemigo++;
+        if (contadorDisparoEnemigo < INTERVALO_DISPARO_ENEMIGO) return;
+        contadorDisparoEnemigo = 0;
+
+        // Buscar slot libre
+        BalaEnemiga libre = null;
+        for (BalaEnemiga be : balasEnemigas) {
+            if (!be.isActiva()) { libre = be; break; }
+        }
+        if (libre == null) return;
+
+        // Para cada columna, encontrar el enemigo vivo MAS ARRIBA
+        // (recorremos de f=0 hacia abajo y tomamos el primero vivo).
+        List<Enemigo> tiradores = new ArrayList<>();
+        for (int c = 0; c < COLUMNAS; c++) {
+            for (int f = 0; f < FILAS; f++) {
+                if (enemigos[f][c].isActivo()) {
+                    tiradores.add(enemigos[f][c]);
+                    break;
+                }
+            }
+        }
+        // Incluir tambien los enemigos extra creados por el admin
+        for (Enemigo e : enemigosExtra)
+            if (e.isActivo()) tiradores.add(e);
+
+        if (tiradores.isEmpty()) return;
+
+        Enemigo elegido = tiradores.get(random.nextInt(tiradores.size()));
+        int bx = elegido.getX() + Enemigo.ANCHO / 2 - BalaEnemiga.ANCHO / 2;
+        int by = elegido.getY() + Enemigo.ALTO;
+        libre.disparar(bx, by);
     }
 
     private void moverBloque() {
@@ -156,37 +237,82 @@ public class EstadoJuego {
     }
 
     private void verificarColisiones() {
+        // ── Balas del jugador ────────────────────────────
         for (Bala bala : balas) {
             if (!bala.isActiva()) continue;
             Jugador jugador = jugadores.get(bala.getIdJugador());
 
-            // Colisión con enemigos de la formación
-            for (int f = 0; f < FILAS; f++)
-                for (int c = 0; c < COLUMNAS; c++) {
+            // Bunkers (la bala del jugador tambien rompe bunkers desde abajo)
+            boolean hitBunker = false;
+            for (Bunker bk : bunkers) {
+                if (bk.impacto(bala.getX(), bala.getY(), Bala.ANCHO, Bala.ALTO)) {
+                    bala.desactivar();
+                    hitBunker = true;
+                    break;
+                }
+            }
+            if (hitBunker) continue;
+
+            // Enemigos de la formación
+            boolean hitEnemigo = false;
+            for (int f = 0; f < FILAS && !hitEnemigo; f++)
+                for (int c = 0; c < COLUMNAS && !hitEnemigo; c++) {
                     Enemigo e = enemigos[f][c];
                     if (e.colisionaCon(bala.getX(), bala.getY(), Bala.ANCHO, Bala.ALTO)) {
                         jugador.sumarPuntaje(e.getPuntos());
                         e.destruir();
                         bala.desactivar();
                         verificarVictoria(jugador);
-                        return;
+                        hitEnemigo = true;
                     }
                 }
+            if (hitEnemigo) continue;
 
-            // Colisión con enemigos extra (creados por admin)
+            // Enemigos extra
+            boolean hitExtra = false;
             for (Enemigo e : enemigosExtra)
                 if (e.colisionaCon(bala.getX(), bala.getY(), Bala.ANCHO, Bala.ALTO)) {
                     jugador.sumarPuntaje(e.getPuntos());
                     e.destruir();
                     bala.desactivar();
-                    return;
+                    hitExtra = true;
+                    break;
                 }
+            if (hitExtra) continue;
 
-            // Colisión con OVNI
+            // OVNI
             if (ovni.colisionaCon(bala.getX(), bala.getY(), Bala.ANCHO, Bala.ALTO)) {
                 jugador.sumarPuntaje(ovni.getPuntos());
                 ovni.destruir();
                 bala.desactivar();
+            }
+        }
+
+        // ── Balas enemigas ───────────────────────────────
+        for (BalaEnemiga be : balasEnemigas) {
+            if (!be.isActiva()) continue;
+
+            // Bunkers
+            boolean hitBunker = false;
+            for (Bunker bk : bunkers) {
+                if (bk.impacto(be.getX(), be.getY(), BalaEnemiga.ANCHO, BalaEnemiga.ALTO)) {
+                    be.desactivar();
+                    hitBunker = true;
+                    break;
+                }
+            }
+            if (hitBunker) continue;
+
+            // Jugadores
+            for (Jugador j : jugadores) {
+                if (be.colisionaCon(j.getX(), j.getY(), Jugador.ANCHO, Jugador.ALTO)) {
+                    j.perderVida();
+                    be.desactivar();
+                    if (j.getVidas() <= 0) {
+                        juegoActivo = false;
+                    }
+                    break;
+                }
             }
         }
     }
@@ -199,6 +325,8 @@ public class EstadoJuego {
         jugador.ganarVida();
         velocidadBloque += 2;
         inicializarEnemigos();
+        // Limpia balas enemigas en pantalla al cambiar de oleada
+        for (BalaEnemiga be : balasEnemigas) be.desactivar();
     }
 
     private void verificarFinJuego() {
@@ -242,12 +370,22 @@ public class EstadoJuego {
         this.velocidadBloque = vel;
     }
 
+    /**
+     * Comando admin BUNKERS n%. Pone todos los bunkers al porcentaje dado.
+     * 100 = reconstruidos, 0 = destruidos.
+     */
+    public synchronized void cambiarBunkers(int porcentaje) {
+        for (Bunker bk : bunkers) bk.setPorcentaje(porcentaje);
+        System.out.println("[ADMIN] Bunkers al " + porcentaje + "%");
+    }
+
     // ── SERIALIZAR ESTADO ───────────────────────────────
     public synchronized String serializar() {
         StringBuilder sb = new StringBuilder();
         sb.append("INICIO_ESTADO\n");
         for (Jugador j : jugadores)  sb.append(j.serializar()).append("\n");
         for (Bala b : balas)         sb.append(b.serializar()).append("\n");
+        for (BalaEnemiga be : balasEnemigas) sb.append(be.serializar()).append("\n");
         for (int f = 0; f < FILAS; f++)
             for (int c = 0; c < COLUMNAS; c++)
                 sb.append(enemigos[f][c].serializar()).append("\n");
@@ -257,6 +395,7 @@ public class EstadoJuego {
             sb.append(String.format("EXTRA %d %d %d %d %s",
                 i, e.getX(), e.getY(), e.isActivo() ? 1 : 0, e.getTipo().name())).append("\n");
         }
+        for (Bunker bk : bunkers) sb.append(bk.serializar()).append("\n");
         sb.append(ovni.serializar()).append("\n");
         sb.append("JUEGO_ACTIVO ").append(juegoActivo ? 1 : 0).append("\n");
         sb.append("FIN_ESTADO\n");
