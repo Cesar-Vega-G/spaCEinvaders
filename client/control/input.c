@@ -1,5 +1,6 @@
 #include "input.h"
 #include "../constantes.h"
+#include <stdio.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -62,6 +63,13 @@ void inicializarControlPico()
 
     SetCommTimeouts(puertoPico, &tiempos);
 
+    // Limpia datos viejos y activa señales de control del puerto serial
+    PurgeComm(puertoPico, PURGE_RXCLEAR | PURGE_TXCLEAR);
+    EscapeCommFunction(puertoPico, SETDTR);
+    EscapeCommFunction(puertoPico, SETRTS);
+
+    printf("[PICO] Control Pico conectado en %s\n", PUERTO_PICO);
+    fflush(stdout);
     SDL_Log("Control Pico conectado en %s", PUERTO_PICO);
 #endif
 #endif
@@ -85,34 +93,73 @@ static void procesarComandoPico(Conexion *conexion)
 #if USAR_CONTROL_PICO
 #ifdef _WIN32
     if (puertoPico == INVALID_HANDLE_VALUE)
+    {
         return;
+    }
+
     if (conexion->idJugador < 0)
+    {
         return;
+    }
+
+    DWORD errores;
+    COMSTAT estado;
+
+    ClearCommError(puertoPico, &errores, &estado);
+
+    if (estado.cbInQue > 0)
+    {
+        printf("[PICO] Bytes disponibles: %lu\n", estado.cbInQue);
+        fflush(stdout);
+    }
 
     char dato;
     DWORD leidos = 0;
 
-    while (ReadFile(puertoPico, &dato, 1, &leidos, NULL) && leidos > 0)
+    while (estado.cbInQue > 0)
     {
+        if (!ReadFile(puertoPico, &dato, 1, &leidos, NULL))
+        {
+            printf("[PICO] ERROR leyendo puerto\n");
+            fflush(stdout);
+            break;
+        }
+
+        if (leidos == 0)
+        {
+            break;
+        }
+
+        printf("[PICO] Dato recibido: %c\n", dato);
+        fflush(stdout);
+
         switch (dato)
         {
         case 'I':
+            printf("[PICO] Enviando al servidor: MOVER_IZQ\n");
+            fflush(stdout);
             enviarMensaje(conexion, "MOVER_IZQ");
             break;
 
         case 'D':
+            printf("[PICO] Enviando al servidor: MOVER_DER\n");
+            fflush(stdout);
             enviarMensaje(conexion, "MOVER_DER");
             break;
 
         case 'F':
+            printf("[PICO] Enviando al servidor: DISPARAR\n");
+            fflush(stdout);
             enviarMensaje(conexion, "DISPARAR");
             break;
 
         default:
+            printf("[PICO] Dato desconocido: %c\n", dato);
+            fflush(stdout);
             break;
         }
 
-        leidos = 0;
+        ClearCommError(puertoPico, &errores, &estado);
     }
 #endif
 #endif
