@@ -2,8 +2,8 @@
 #define CONSTANTES_H
 
 // Pantalla
-#define ANCHO_PANTALLA 600
-#define ALTO_PANTALLA 450
+#define ANCHO_PANTALLA 1200
+#define ALTO_PANTALLA 900
 #define TITULO_JUEGO "spaCEinvaders"
 #define FPS_OBJETIVO 30
 #

@@ -1,5 +1,6 @@
 #include <SDL2/SDL.h>
 #include "constantes.h"
+#include <stdio.h>
 
 // MUC — Logica / Interfaz / Control / Comunicacion
 #include "logica/jugador.h"
@@ -69,9 +70,19 @@ int main(int argc, char *argv[])
     Conexion conexion = crearConexion();
     conexion.esEspectador = (argc > 1 && argv[1][0] == 's') ? 1 : 0;
     conectarServidor(&conexion, "127.0.0.1", 5000);
+    printf("[MAIN] Despues de conectar al servidor\n");
+    fflush(stdout);
+
     if (!conexion.esEspectador)
     {
+        printf("[MAIN] Voy a inicializar Pico\n");
+        fflush(stdout);
         inicializarControlPico();
+    }
+    else
+    {
+        printf("[MAIN] Soy espectador, no inicializo Pico\n");
+        fflush(stdout);
     }
 
     // ── 4. GAME LOOP ─────────────────────────────────────
