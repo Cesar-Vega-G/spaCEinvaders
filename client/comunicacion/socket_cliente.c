@@ -29,7 +29,7 @@ Conexion crearConexion() {
 }
 
 // ── CONECTAR AL SERVIDOR ────────────────────────────
-int conectarServidor(Conexion* conexion, const char* ip, int puerto) {
+int conectarServidor(Conexion* conexion, const char* ip, int puerto, int usarPico) {
     struct sockaddr_in direccion;
     direccion.sin_family      = AF_INET;
     direccion.sin_port        = htons(puerto);
@@ -38,13 +38,51 @@ int conectarServidor(Conexion* conexion, const char* ip, int puerto) {
     connect(conexion->socket, (struct sockaddr*)&direccion, sizeof(direccion));
     SDL_Delay(100);  // Dar tiempo a que el OS complete el handshake TCP
 
-    // Enviar rol como primer mensaje para que el servidor asigne partida correcta
-    const char* rol = conexion->esEspectador ? "ESPECTADOR\n" : "JUGADOR\n";
+    const char* rol;
+    if (conexion->esEspectador)      rol = "ESPECTADOR\n";
+    else if (usarPico)               rol = "JUGADOR_PICO\n";
+    else                             rol = "JUGADOR_TECLADO\n";
+
     send(conexion->socket, rol, strlen(rol), 0);
 
     conexion->conectado = 1;
-    printf("Conectado al servidor %s:%d como %s\n",
-           ip, puerto, conexion->esEspectador ? "ESPECTADOR" : "JUGADOR");
+    return 1;
+}
+
+// ── VERIFICAR SLOT ──────────────────────────────────
+// Lee la primera respuesta del servidor (BIENVENIDO X o SLOT_OCUPADO).
+// Devuelve 1 si OK (y setea idJugador), 0 si el slot ya está ocupado.
+int verificarSlot(Conexion* conexion) {
+    // Cambiar a bloqueante con timeout de 3 s
+    u_long bloqueante = 0;
+    ioctlsocket(conexion->socket, FIONBIO, &bloqueante);
+    DWORD tmo = 3000;
+    setsockopt(conexion->socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tmo, sizeof(tmo));
+
+    char linea[256];
+    int i = 0;
+    char c;
+    while (i < 255) {
+        int n = recv(conexion->socket, &c, 1, 0);
+        if (n <= 0) break;
+        if (c == '\n') break;
+        if (c != '\r') linea[i++] = c;
+    }
+    linea[i] = '\0';
+
+    // Volver a no-bloqueante sin timeout
+    u_long nb = 1;
+    ioctlsocket(conexion->socket, FIONBIO, &nb);
+    DWORD noTmo = 0;
+    setsockopt(conexion->socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&noTmo, sizeof(noTmo));
+
+    if (strncmp(linea, "SLOT_OCUPADO", 12) == 0) return 0;
+
+    // "BIENVENIDO X" — extraer id
+    int id;
+    if (sscanf(linea, "BIENVENIDO %d", &id) == 1)
+        conexion->idJugador = id;
+
     return 1;
 }
 

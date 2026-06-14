@@ -41,10 +41,18 @@ int main(int argc, char *argv[])
     // ── 3. CONECTAR AL SERVIDOR ──────────────────────────
     Conexion conexion = crearConexion();
     conexion.esEspectador = (opcion == 3) ? 1 : 0;
-    conectarServidor(&conexion, "127.0.0.1", 5000);
+    conectarServidor(&conexion, "127.0.0.1", 5000, usarPico);
 
-    // Espectadores eligen qué partida observar
-    if (conexion.esEspectador) {
+    if (!conexion.esEspectador) {
+        // Leer primera respuesta: BIENVENIDO id  o  SLOT_OCUPADO
+        if (!verificarSlot(&conexion)) {
+            printf("\nEse control ya tiene un jugador activo. Cerrando.\n");
+            cerrarConexion(&conexion);
+            SDL_Quit();
+            return 0;
+        }
+    } else {
+        // Espectadores eligen qué partida observar
         if (!elegirPartida(&conexion)) {
             printf("No se pudo unir a ninguna partida. Cerrando.\n");
             cerrarConexion(&conexion);
@@ -52,6 +60,9 @@ int main(int argc, char *argv[])
             return 0;
         }
     }
+
+    // Limpiar la pantalla de selección
+    system("cls");
 
     SDL_Window *ventana = SDL_CreateWindow(
         TITULO_JUEGO,

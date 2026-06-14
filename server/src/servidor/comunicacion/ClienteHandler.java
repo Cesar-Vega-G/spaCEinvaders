@@ -25,13 +25,16 @@ public class ClienteHandler implements Runnable, ObservadorEstado {
     private       boolean    conectado = true;
     private       int        partidaId = -1;
     private final Servidor   servidor;
+    private final String     tipoControl; // "TECLADO", "PICO" o null para espectadores
 
     public ClienteHandler(Socket socket, EstadoJuego estado,
-                          boolean esEspectador, Servidor servidor) {
+                          boolean esEspectador, Servidor servidor,
+                          String tipoControl) {
         this.socket       = socket;
         this.estado       = estado;
         this.esEspectador = esEspectador;
         this.servidor     = servidor;
+        this.tipoControl  = tipoControl;
     }
 
     public void setPartidaId(int id) { this.partidaId = id; }
@@ -53,9 +56,9 @@ public class ClienteHandler implements Runnable, ObservadorEstado {
         } finally {
             if (estado != null) {
                 if (!esEspectador && partidaId >= 0) {
-                    // Al desconectarse el jugador: cierra la partida (notifica espectadores)
                     estado.cerrar();
                     servidor.eliminarPartida(partidaId);
+                    servidor.liberarSlot(tipoControl);
                 }
                 estado.eliminarObservador(this);
             }

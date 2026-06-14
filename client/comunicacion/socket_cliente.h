@@ -13,7 +13,8 @@ typedef struct {
 } Conexion;
 
 Conexion crearConexion();
-int  conectarServidor(Conexion* conexion, const char* ip, int puerto);
+int  conectarServidor(Conexion* conexion, const char* ip, int puerto, int usarPico);
+int  verificarSlot(Conexion* conexion);
 int  elegirPartida(Conexion* conexion);
 void enviarMensaje(Conexion* conexion, const char* mensaje);
 int  recibirEstado(Conexion* conexion, char* buffer, int tamano);

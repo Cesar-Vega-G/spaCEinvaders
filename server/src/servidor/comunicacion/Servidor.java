@@ -22,6 +22,10 @@ public class Servidor {
     private int     nextId    = 0;
     private boolean corriendo = true;
 
+    // Un slot por tipo de control; impide duplicados
+    private boolean tecladoConectado = false;
+    private boolean picoConectado    = false;
+
     public void iniciar() throws IOException {
         serverSocket = new ServerSocket(PUERTO);
         System.out.println("=== spaCEinvaders Servidor ===");
@@ -41,19 +45,39 @@ public class Servidor {
                 Socket socket = serverSocket.accept();
                 String rol = leerRol(socket);
 
+                if (rol.equalsIgnoreCase("ESPECTADOR")) {
+                    System.out.println("[SERVIDOR] Espectador conectado");
+                    ClienteHandler h = new ClienteHandler(socket, null, true, this, null);
+                    synchronized (clientes) { clientes.add(h); }
+                    new Thread(h).start();
+                    continue;
+                }
+
+                // Determinar tipo de control
+                boolean esPico = rol.equalsIgnoreCase("JUGADOR_PICO");
+                String tipo    = esPico ? "PICO" : "TECLADO";
+
                 ClienteHandler handler;
                 synchronized (partidas) {
-                    if (rol.equalsIgnoreCase("ESPECTADOR")) {
-                        System.out.println("[SERVIDOR] Espectador conectado");
-                        handler = new ClienteHandler(socket, null, true, this);
-                    } else {
-                        EstadoJuego nueva = new EstadoJuego();
-                        int id = nextId++;
-                        partidas.put(id, nueva);
-                        handler = new ClienteHandler(socket, nueva, false, this);
-                        handler.setPartidaId(id);
-                        System.out.println("[SERVIDOR] Jugador conectado -> partida " + id + " creada");
+                    boolean ocupado = esPico ? picoConectado : tecladoConectado;
+                    if (ocupado) {
+                        try {
+                            PrintWriter pw = new PrintWriter(socket.getOutputStream(), true);
+                            pw.println("SLOT_OCUPADO");
+                            socket.close();
+                        } catch (Exception ex) { /* ignorar */ }
+                        System.out.println("[SERVIDOR] Slot " + tipo + " ocupado - rechazo");
+                        continue;
                     }
+                    if (esPico) picoConectado = true;
+                    else tecladoConectado = true;
+
+                    EstadoJuego nueva = new EstadoJuego();
+                    int id = nextId++;
+                    partidas.put(id, nueva);
+                    handler = new ClienteHandler(socket, nueva, false, this, tipo);
+                    handler.setPartidaId(id);
+                    System.out.println("[SERVIDOR] Jugador " + tipo + " -> partida " + id + " creada");
                 }
 
                 synchronized (clientes) { clientes.add(handler); }
@@ -63,6 +87,15 @@ public class Servidor {
                 if (corriendo) System.out.println("[ERROR] Aceptando conexion: " + e.getMessage());
             }
         }
+    }
+
+    public void liberarSlot(String tipo) {
+        if (tipo == null) return;
+        synchronized (partidas) {
+            if ("TECLADO".equals(tipo)) tecladoConectado = false;
+            else if ("PICO".equals(tipo))  picoConectado    = false;
+        }
+        System.out.println("[SERVIDOR] Slot " + tipo + " liberado");
     }
 
     private String leerRol(Socket socket) {
