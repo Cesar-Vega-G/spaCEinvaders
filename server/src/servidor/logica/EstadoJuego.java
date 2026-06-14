@@ -325,7 +325,8 @@ public class EstadoJuego {
                 if (enemigos[f][c].isActivo()) return;
 
         jugador.ganarVida();
-        velocidadBloque += 2;
+        velocidadBloque += 3;
+        if (intervaloMovimiento > 2) intervaloMovimiento--;
         inicializarEnemigos();
         // Limpia balas enemigas en pantalla al cambiar de oleada
         for (BalaEnemiga be : balasEnemigas) be.desactivar();

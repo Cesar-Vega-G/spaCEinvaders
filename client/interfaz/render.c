@@ -1,5 +1,6 @@
 #include "render.h"
 #include <stdio.h>
+#include <string.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "../libs/stb_image.h"
@@ -72,6 +73,63 @@ static const int FUENTE[10][5][3] = {
     {{1,1,1},{1,0,1},{1,1,1},{1,0,1},{1,1,1}}, // 8
     {{1,1,1},{1,0,1},{1,1,1},{0,0,1},{1,1,1}}, // 9
 };
+
+// Fuente de pixeles 3x5 para letras A-Z
+static const int LETRAS[26][5][3] = {
+    {{0,1,0},{1,0,1},{1,1,1},{1,0,1},{1,0,1}}, // A
+    {{1,1,0},{1,0,1},{1,1,0},{1,0,1},{1,1,0}}, // B
+    {{0,1,1},{1,0,0},{1,0,0},{1,0,0},{0,1,1}}, // C
+    {{1,1,0},{1,0,1},{1,0,1},{1,0,1},{1,1,0}}, // D
+    {{1,1,1},{1,0,0},{1,1,0},{1,0,0},{1,1,1}}, // E
+    {{1,1,1},{1,0,0},{1,1,0},{1,0,0},{1,0,0}}, // F
+    {{0,1,1},{1,0,0},{1,0,1},{1,0,1},{0,1,1}}, // G
+    {{1,0,1},{1,0,1},{1,1,1},{1,0,1},{1,0,1}}, // H
+    {{1,1,1},{0,1,0},{0,1,0},{0,1,0},{1,1,1}}, // I
+    {{0,1,1},{0,0,1},{0,0,1},{1,0,1},{0,1,0}}, // J
+    {{1,0,1},{1,1,0},{1,1,0},{1,0,1},{1,0,1}}, // K
+    {{1,0,0},{1,0,0},{1,0,0},{1,0,0},{1,1,1}}, // L
+    {{1,0,1},{1,1,1},{1,1,1},{1,0,1},{1,0,1}}, // M
+    {{1,0,1},{1,1,1},{1,0,1},{1,0,1},{1,0,1}}, // N
+    {{0,1,0},{1,0,1},{1,0,1},{1,0,1},{0,1,0}}, // O
+    {{1,1,0},{1,0,1},{1,1,0},{1,0,0},{1,0,0}}, // P
+    {{0,1,0},{1,0,1},{1,0,1},{0,1,1},{0,0,1}}, // Q
+    {{1,1,0},{1,0,1},{1,1,0},{1,0,1},{1,0,1}}, // R
+    {{0,1,1},{1,0,0},{0,1,0},{0,0,1},{1,1,0}}, // S
+    {{1,1,1},{0,1,0},{0,1,0},{0,1,0},{0,1,0}}, // T
+    {{1,0,1},{1,0,1},{1,0,1},{1,0,1},{0,1,1}}, // U
+    {{1,0,1},{1,0,1},{1,0,1},{0,1,0},{0,1,0}}, // V
+    {{1,0,1},{1,0,1},{1,1,1},{1,1,1},{1,0,1}}, // W
+    {{1,0,1},{1,0,1},{0,1,0},{1,0,1},{1,0,1}}, // X
+    {{1,0,1},{1,0,1},{0,1,0},{0,1,0},{0,1,0}}, // Y
+    {{1,1,1},{0,0,1},{0,1,0},{1,0,0},{1,1,1}}, // Z
+};
+
+static void dibujarChar(SDL_Renderer* r, char c, int x, int y, int sc,
+                        Uint8 cr, Uint8 cg, Uint8 cb) {
+    const int (*bmp)[3] = NULL;
+    if      (c >= '0' && c <= '9') bmp = FUENTE[c - '0'];
+    else if (c >= 'A' && c <= 'Z') bmp = LETRAS[c - 'A'];
+    else return;
+    SDL_SetRenderDrawColor(r, cr, cg, cb, 255);
+    for (int row = 0; row < 5; row++)
+        for (int col = 0; col < 3; col++)
+            if (bmp[row][col]) {
+                SDL_Rect px = {x + col*sc, y + row*sc, sc, sc};
+                SDL_RenderFillRect(r, &px);
+            }
+}
+
+static void dibujarTexto(SDL_Renderer* r, const char* txt, int x, int y, int sc,
+                          Uint8 cr, Uint8 cg, Uint8 cb) {
+    for (; *txt; txt++, x += sc * 4)
+        dibujarChar(r, *txt, x, y, sc, cr, cg, cb);
+}
+
+static void dibujarTextoCentrado(SDL_Renderer* r, const char* txt, int y, int sc,
+                                  Uint8 cr, Uint8 cg, Uint8 cb) {
+    int ancho = (int)strlen(txt) * sc * 4;
+    dibujarTexto(r, txt, (ANCHO_PANTALLA - ancho) / 2, y, sc, cr, cg, cb);
+}
 
 static void dibujarNumero(SDL_Renderer* r, int numero, int x, int y, int escala) {
     char buf[16];
@@ -196,10 +254,10 @@ void renderizarTodo(SDL_Renderer* renderizador,
     SDL_SetRenderDrawColor(renderizador, 255, 255, 255, 255);
     dibujarNumero(renderizador, jugadores[0].puntaje, 10, 10, 3);
 
-    // HUD jugador 0: vidas como cuadraditos blancos
+    // HUD jugador 0: vidas como miniaturas del sprite del jugador
     for (int v = 0; v < jugadores[0].vidas; v++) {
-        SDL_Rect vida = {10 + v * 30, 55, 20, 20};
-        SDL_RenderFillRect(renderizador, &vida);
+        SDL_Rect vida = {10 + v * 40, 50, 32, 15};
+        dibujarSprite(renderizador, texJugador, &vida, 255, 255, 255);
     }
 
     // HUD jugador 1: puntaje en cyan arriba derecha (si existe)
@@ -207,10 +265,82 @@ void renderizarTodo(SDL_Renderer* renderizador,
         SDL_SetRenderDrawColor(renderizador, 0, 255, 255, 255);
         dibujarNumero(renderizador, jugadores[1].puntaje, 1050, 10, 3);
         for (int v = 0; v < jugadores[1].vidas; v++) {
-            SDL_Rect vida = {1050 + v * 30, 55, 20, 20};
-            SDL_RenderFillRect(renderizador, &vida);
+            SDL_Rect vida = {1050 + v * 40, 50, 32, 15};
+            if (texJugador) {
+                SDL_SetTextureColorMod(texJugador, 0, 255, 255);
+                SDL_RenderCopy(renderizador, texJugador, NULL, &vida);
+                SDL_SetTextureColorMod(texJugador, 255, 255, 255);
+            } else {
+                SDL_SetRenderDrawColor(renderizador, 0, 255, 255, 255);
+                SDL_RenderFillRect(renderizador, &vida);
+            }
         }
     }
 
     SDL_RenderPresent(renderizador);
+}
+
+int mostrarGameOver(SDL_Renderer* r, int puntaje) {
+    char bufPts[32];
+    snprintf(bufPts, sizeof(bufPts), "PUNTAJE  %d", puntaje);
+
+    // Botón JUGAR DE NUEVO (verde)
+    SDL_Rect btnJugar = {ANCHO_PANTALLA/2 - 230, 460, 460, 65};
+    // Botón SALIR (rojo)
+    SDL_Rect btnSalir = {ANCHO_PANTALLA/2 - 230, 570, 460, 65};
+
+    int resultado = 0, loop = 1;
+    SDL_Event e;
+
+    while (loop) {
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
+                loop = 0; resultado = 0;
+            }
+            if (e.type == SDL_KEYDOWN) {
+                if (e.key.keysym.sym == SDLK_RETURN ||
+                    e.key.keysym.sym == SDLK_KP_ENTER) {
+                    loop = 0; resultado = 1;
+                }
+                if (e.key.keysym.sym == SDLK_ESCAPE) {
+                    loop = 0; resultado = 0;
+                }
+            }
+            if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+                int mx = e.button.x, my = e.button.y;
+                if (mx >= btnJugar.x && mx < btnJugar.x + btnJugar.w &&
+                    my >= btnJugar.y && my < btnJugar.y + btnJugar.h) {
+                    loop = 0; resultado = 1;
+                }
+                if (mx >= btnSalir.x && mx < btnSalir.x + btnSalir.w &&
+                    my >= btnSalir.y && my < btnSalir.y + btnSalir.h) {
+                    loop = 0; resultado = 0;
+                }
+            }
+        }
+
+        SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
+        SDL_RenderClear(r);
+
+        // "GAME OVER" en rojo (escala 12 → cada pixel 12x12)
+        dibujarTextoCentrado(r, "GAME OVER", 180, 12, 220, 40, 40);
+
+        // Puntaje final en blanco (escala 6)
+        dibujarTextoCentrado(r, bufPts, 330, 6, 255, 255, 255);
+
+        // Botón verde: JUGAR DE NUEVO
+        SDL_SetRenderDrawColor(r, 20, 140, 20, 255);
+        SDL_RenderFillRect(r, &btnJugar);
+        dibujarTextoCentrado(r, "ENTER  JUGAR DE NUEVO", 484, 4, 255, 255, 255);
+
+        // Botón rojo: SALIR
+        SDL_SetRenderDrawColor(r, 140, 20, 20, 255);
+        SDL_RenderFillRect(r, &btnSalir);
+        dibujarTextoCentrado(r, "ESC  SALIR", 594, 4, 255, 255, 255);
+
+        SDL_RenderPresent(r);
+        SDL_Delay(33);
+    }
+
+    return resultado;
 }
