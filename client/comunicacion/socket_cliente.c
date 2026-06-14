@@ -48,6 +48,71 @@ int conectarServidor(Conexion* conexion, const char* ip, int puerto) {
     return 1;
 }
 
+// ── ELEGIR PARTIDA (solo espectadores) ─────────────
+// Lee una línea del socket bloqueante, carácter a carácter.
+static void leerLinea(SOCKET s, char* buf, int maxLen) {
+    int i = 0;
+    char c;
+    while (i < maxLen - 1) {
+        int n = recv(s, &c, 1, 0);
+        if (n <= 0) break;
+        if (c == '\n') break;
+        if (c != '\r') buf[i++] = c;
+    }
+    buf[i] = '\0';
+}
+
+int elegirPartida(Conexion* conexion) {
+    // Cambiar a modo bloqueante para leer la lista del servidor
+    u_long bloqueante = 0;
+    ioctlsocket(conexion->socket, FIONBIO, &bloqueante);
+
+    // Leer "PARTIDAS n"
+    char linea[256];
+    leerLinea(conexion->socket, linea, sizeof(linea));
+
+    int n = 0;
+    sscanf(linea, "PARTIDAS %d", &n);
+
+    // Leer cada "PARTIDA id"
+    int ids[64];
+    for (int i = 0; i < n && i < 64; i++) {
+        char pl[256];
+        leerLinea(conexion->socket, pl, sizeof(pl));
+        ids[i] = -1;
+        sscanf(pl, "PARTIDA %d", &ids[i]);
+    }
+
+    // Volver a modo no bloqueante
+    u_long noBloqueante = 1;
+    ioctlsocket(conexion->socket, FIONBIO, &noBloqueante);
+
+    if (n == 0) {
+        printf("No hay partidas activas en este momento.\n");
+        return 0;
+    }
+
+    printf("\nPartidas disponibles:\n");
+    for (int i = 0; i < n; i++)
+        printf("  %d. Partida del Jugador %d\n", i + 1, ids[i]);
+
+    printf("Seleccione (1-%d): ", n);
+    fflush(stdout);
+
+    int sel = 0;
+    scanf("%d", &sel);
+
+    if (sel < 1 || sel > n) {
+        printf("Seleccion invalida.\n");
+        return 0;
+    }
+
+    char msg[32];
+    snprintf(msg, sizeof(msg), "VER %d\n", ids[sel - 1]);
+    send(conexion->socket, msg, (int)strlen(msg), 0);
+    return 1;
+}
+
 // ── ENVIAR MENSAJE ──────────────────────────────────
 void enviarMensaje(Conexion* conexion, const char* mensaje) {
     if (!conexion->conectado) return;

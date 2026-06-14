@@ -60,9 +60,9 @@ public class EstadoJuego {
         bunkers             = new ArrayList<>();
         ovni                = new Ovni();
         direccionBloque     = 1;
-        velocidadBloque     = 5;
+        velocidadBloque     = 10;
         contadorMovimiento  = 0;
-        intervaloMovimiento = 10;
+        intervaloMovimiento = 5;
         contadorDisparoEnemigo = 0;
         juegoActivo         = true;
         contadorOvni        = 0;
@@ -78,22 +78,19 @@ public class EstadoJuego {
 
     public synchronized void eliminarObservador(ObservadorEstado obs) {
         observadores.remove(obs);
-        // Si no quedan observadores, resetear la partida para que otro jugador pueda entrar
-        if (observadores.isEmpty()) {
-            jugadores.clear();
-            balas.clear();
-            for (BalaEnemiga be : balasEnemigas) be.desactivar();
-            contadorOvni = 0;
-            contadorDisparoEnemigo = 0;
-            juegoActivo  = true;
-            inicializarEnemigos();
-            inicializarBunkers();
-            System.out.println("[PARTIDA] Jugador desconectado — partida reseteada.");
-        }
+    }
+
+    // Cierra la partida: notifica a espectadores con JUEGO_ACTIVO 0 y limpia observadores.
+    public synchronized void cerrar() {
+        juegoActivo = false;
+        notificarObservadores(serializar());
+        observadores.clear();
     }
 
     private void notificarObservadores(String estado) {
-        for (ObservadorEstado obs : observadores)
+        ObservadorEstado[] snap;
+        synchronized (this) { snap = observadores.toArray(new ObservadorEstado[0]); }
+        for (ObservadorEstado obs : snap)
             obs.actualizar(estado);
     }
 
@@ -136,20 +133,25 @@ public class EstadoJuego {
     }
 
     // ── ACTUALIZAR (llamado cada frame) ─────────────────
-    public synchronized void actualizar() {
-        if (!juegoActivo) {
-            notificarObservadores(serializar());
-            return;
+    public void actualizar() {
+        String estado;
+        synchronized (this) {
+            if (!juegoActivo) {
+                estado = serializar();
+            } else {
+                moverBloque();
+                for (Bala b : balas) b.actualizar();
+                for (BalaEnemiga be : balasEnemigas) be.actualizar(ALTO_PANTALLA);
+                actualizarOvniAutomatico();
+                ovni.actualizar(ANCHO_PANTALLA);
+                dispararEnemigoAutomatico();
+                verificarColisiones();
+                verificarFinJuego();
+                estado = serializar();
+            }
         }
-        moverBloque();
-        for (Bala b : balas) b.actualizar();
-        for (BalaEnemiga be : balasEnemigas) be.actualizar(ALTO_PANTALLA);
-        actualizarOvniAutomatico();
-        ovni.actualizar(ANCHO_PANTALLA);
-        dispararEnemigoAutomatico();
-        verificarColisiones();
-        verificarFinJuego();
-        notificarObservadores(serializar());
+        // Notificar FUERA del lock: un cliente lento no bloquea el gameLoop
+        notificarObservadores(estado);
     }
 
     // Aparece solo cada INTERVALO_OVNI frames; dirección aleatoria, puntos aleatorios

@@ -7,86 +7,57 @@ import servidor.logica.EstadoJuego;
 
 /**
  * COMUNICACION — Servidor de sockets.
- * Gestiona 1 partida compartida: hasta 2 jugadores + espectadores.
- * Cada cliente jugador controla su propio cañon en el mismo juego.
+ * Gestiona N partidas independientes: 1 jugador por partida + espectadores.
+ * Los espectadores eligen qué partida observar mediante el comando VER.
  */
 public class Servidor {
 
-    private static final int PUERTO         = 5000;
-    private static final int MAX_JUGADORES  = 2;
-    private static final int FPS            = 30;
-    private static final long MS_POR_FRAME  = 1000 / FPS;
+    private static final int PUERTO        = 5000;
+    private static final int FPS           = 30;
+    private static final long MS_POR_FRAME = 1000 / FPS;
 
     private ServerSocket serverSocket;
-    private EstadoJuego partida;           // unica partida compartida
-    private List<ClienteHandler> clientes;
-    private boolean corriendo;
-
-    public Servidor() {
-        partida   = new EstadoJuego();
-        clientes  = new ArrayList<>();
-        corriendo = true;
-    }
+    private final Map<Integer, EstadoJuego> partidas = new LinkedHashMap<>();
+    private final List<ClienteHandler>      clientes = new ArrayList<>();
+    private int     nextId    = 0;
+    private boolean corriendo = true;
 
     public void iniciar() throws IOException {
         serverSocket = new ServerSocket(PUERTO);
         System.out.println("=== spaCEinvaders Servidor ===");
         System.out.println("Puerto: " + PUERTO);
-        System.out.println("Max jugadores: " + MAX_JUGADORES + " + espectadores ilimitados");
-        System.out.println("Comandos: CREAR x y tipo | OVNI dir pts | VELOCIDAD n");
+        System.out.println("1 jugador por partida | espectadores ilimitados");
+        System.out.println("Comandos: CREAR x y tipo | OVNI dir pts | VELOCIDAD n | BUNKERS n%");
 
         new Thread(this::aceptarConexiones).start();
         new Thread(this::manejarAdmin).start();
         gameLoop();
     }
 
+    // ── ACEPTAR CONEXIONES ──────────────────────────────
     private void aceptarConexiones() {
         while (corriendo) {
             try {
                 Socket socket = serverSocket.accept();
+                String rol = leerRol(socket);
 
-                // ── Leer rol que el cliente envía como primer mensaje ──
-                String rolCliente = "JUGADOR";
-                try {
-                    socket.setSoTimeout(3000);
-                    InputStream is = socket.getInputStream();
-                    StringBuilder sb = new StringBuilder();
-                    int b;
-                    while ((b = is.read()) != -1 && b != '\n') {
-                        if (b != '\r') sb.append((char) b);
-                    }
-                    rolCliente = sb.toString().trim();
-                    socket.setSoTimeout(0);
-                } catch (Exception e) {
-                    rolCliente = "JUGADOR";
-                }
-
-                boolean esEspectador;
-
-                synchronized (clientes) {
-                    if (rolCliente.equalsIgnoreCase("ESPECTADOR")) {
-                        esEspectador = true;
-                        System.out.println("[SERVIDOR] Espectador conectado -> observando la partida");
+                ClienteHandler handler;
+                synchronized (partidas) {
+                    if (rol.equalsIgnoreCase("ESPECTADOR")) {
+                        System.out.println("[SERVIDOR] Espectador conectado");
+                        handler = new ClienteHandler(socket, null, true, this);
                     } else {
-                        // Contar jugadores activos en la partida compartida
-                        long jugadoresActivos = clientes.stream()
-                            .filter(c -> c.isConectado() && !c.isEspectador())
-                            .count();
-                        if (jugadoresActivos >= MAX_JUGADORES) {
-                            esEspectador = true;
-                            System.out.println("[SERVIDOR] Partida llena (" + MAX_JUGADORES
-                                + " jugadores) -> entra como espectador");
-                        } else {
-                            esEspectador = false;
-                            System.out.println("[SERVIDOR] Nuevo jugador -> partida compartida ("
-                                + (jugadoresActivos + 1) + "/" + MAX_JUGADORES + ")");
-                        }
+                        EstadoJuego nueva = new EstadoJuego();
+                        int id = nextId++;
+                        partidas.put(id, nueva);
+                        handler = new ClienteHandler(socket, nueva, false, this);
+                        handler.setPartidaId(id);
+                        System.out.println("[SERVIDOR] Jugador conectado -> partida " + id + " creada");
                     }
-
-                    ClienteHandler handler = new ClienteHandler(socket, partida, esEspectador);
-                    clientes.add(handler);
-                    new Thread(handler).start();
                 }
+
+                synchronized (clientes) { clientes.add(handler); }
+                new Thread(handler).start();
 
             } catch (IOException e) {
                 if (corriendo) System.out.println("[ERROR] Aceptando conexion: " + e.getMessage());
@@ -94,27 +65,59 @@ public class Servidor {
         }
     }
 
+    private String leerRol(Socket socket) {
+        try {
+            socket.setSoTimeout(3000);
+            InputStream is = socket.getInputStream();
+            StringBuilder sb = new StringBuilder();
+            int b;
+            while ((b = is.read()) != -1 && b != '\n')
+                if (b != '\r') sb.append((char) b);
+            socket.setSoTimeout(0);
+            return sb.toString().trim();
+        } catch (Exception e) {
+            return "JUGADOR";
+        }
+    }
+
+    // ── ACCESO SEGURO A PARTIDAS (para ClienteHandler) ──
+    public int enviarListaPartidas(PrintWriter salida) {
+        synchronized (partidas) {
+            salida.println("PARTIDAS " + partidas.size());
+            for (Integer id : partidas.keySet())
+                salida.println("PARTIDA " + id);
+            return partidas.size();
+        }
+    }
+
+    public EstadoJuego getPartida(int id) {
+        synchronized (partidas) { return partidas.get(id); }
+    }
+
+    public void eliminarPartida(int id) {
+        synchronized (partidas) { partidas.remove(id); }
+        System.out.println("[SERVIDOR] Partida " + id + " eliminada");
+    }
+
+    // ── GAME LOOP ───────────────────────────────────────
     private void gameLoop() {
         while (corriendo) {
             long inicio = System.currentTimeMillis();
 
-            synchronized (clientes) {
-                clientes.removeIf(c -> !c.isConectado());
-                // Actualizar solo si hay al menos un cliente conectado
-                boolean tieneClientes = clientes.stream().anyMatch(ClienteHandler::isConectado);
-                if (tieneClientes) {
-                    partida.actualizar();
-                }
-            }
+            List<EstadoJuego> snapshot;
+            synchronized (partidas) { snapshot = new ArrayList<>(partidas.values()); }
+            for (EstadoJuego p : snapshot) p.actualizar();
+
+            synchronized (clientes) { clientes.removeIf(c -> !c.isConectado()); }
 
             long espera = MS_POR_FRAME - (System.currentTimeMillis() - inicio);
-            if (espera > 0) {
+            if (espera > 0)
                 try { Thread.sleep(espera); }
                 catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-            }
         }
     }
 
+    // ── ADMIN ───────────────────────────────────────────
     private void manejarAdmin() {
         Scanner scanner = new Scanner(System.in);
         System.out.println("Admin listo. Comandos: CREAR x y tipo | OVNI dir pts | VELOCIDAD n | BUNKERS n%");
@@ -123,32 +126,34 @@ public class Servidor {
             try {
                 if (!scanner.hasNextLine()) continue;
                 String linea = scanner.nextLine().trim();
-                String[] p = linea.split(" ");
+                String[] p   = linea.split(" ");
+
+                List<EstadoJuego> snap;
+                synchronized (partidas) { snap = new ArrayList<>(partidas.values()); }
 
                 switch (p[0].toUpperCase()) {
                     case "CREAR":
-                        // CREAR x y tipo  — Ejemplo: CREAR 300 200 PULPO
                         if (p.length >= 4)
-                            partida.crearEnemigo(
-                                Integer.parseInt(p[1]), Integer.parseInt(p[2]), p[3]);
+                            for (EstadoJuego eg : snap)
+                                eg.crearEnemigo(Integer.parseInt(p[1]), Integer.parseInt(p[2]), p[3]);
                         break;
                     case "OVNI":
-                        // OVNI I-D puntos | OVNI D-I puntos
                         if (p.length >= 3) {
                             int dir = p[1].equalsIgnoreCase("I-D") ? 1 : -1;
-                            partida.crearOvni(dir, Integer.parseInt(p[2]));
+                            for (EstadoJuego eg : snap)
+                                eg.crearOvni(dir, Integer.parseInt(p[2]));
                         }
                         break;
                     case "VELOCIDAD":
-                        // VELOCIDAD n
                         if (p.length >= 2)
-                            partida.cambiarVelocidad(Integer.parseInt(p[1]));
+                            for (EstadoJuego eg : snap)
+                                eg.cambiarVelocidad(Integer.parseInt(p[1]));
                         break;
                     case "BUNKERS":
-                        // BUNKERS 70% | BUNKERS 40% | BUNKERS 0%
                         if (p.length >= 2) {
                             String pct = p[1].replace("%", "").trim();
-                            partida.cambiarBunkers(Integer.parseInt(pct));
+                            for (EstadoJuego eg : snap)
+                                eg.cambiarBunkers(Integer.parseInt(pct));
                         }
                         break;
                     default:

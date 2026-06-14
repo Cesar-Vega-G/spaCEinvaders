@@ -14,6 +14,7 @@ typedef struct {
 
 Conexion crearConexion();
 int  conectarServidor(Conexion* conexion, const char* ip, int puerto);
+int  elegirPartida(Conexion* conexion);
 void enviarMensaje(Conexion* conexion, const char* mensaje);
 int  recibirEstado(Conexion* conexion, char* buffer, int tamano);
 void cerrarConexion(Conexion* conexion);

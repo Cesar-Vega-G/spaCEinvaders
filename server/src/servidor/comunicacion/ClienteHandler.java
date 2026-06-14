@@ -10,23 +10,31 @@ import servidor.logica.modelo.Jugador;
  * COMUNICACION — Maneja la conexión de un cliente individual.
  * Implementa ObservadorEstado (patrón Observer) para recibir
  * actualizaciones del estado del juego automáticamente.
+ *
+ * Flujo jugador:  conecta -> BIENVENIDO id -> recibe comandos
+ * Flujo espectador: conecta -> recibe PARTIDAS -> envía VER id -> observa
  */
 public class ClienteHandler implements Runnable, ObservadorEstado {
 
-    private Socket socket;
-    private EstadoJuego estado;
-    private Jugador jugador;
-    private PrintWriter salida;
-    private BufferedReader entrada;
-    private boolean esEspectador;
-    private boolean conectado;
+    private final Socket    socket;
+    private       EstadoJuego estado;      // null para espectadores hasta elegir partida
+    private       Jugador   jugador;
+    private       PrintWriter  salida;
+    private       BufferedReader entrada;
+    private final boolean    esEspectador;
+    private       boolean    conectado = true;
+    private       int        partidaId = -1;
+    private final Servidor   servidor;
 
-    public ClienteHandler(Socket socket, EstadoJuego estado, boolean esEspectador) {
+    public ClienteHandler(Socket socket, EstadoJuego estado,
+                          boolean esEspectador, Servidor servidor) {
         this.socket       = socket;
         this.estado       = estado;
         this.esEspectador = esEspectador;
-        this.conectado    = true;
+        this.servidor     = servidor;
     }
+
+    public void setPartidaId(int id) { this.partidaId = id; }
 
     @Override
     public void run() {
@@ -34,32 +42,79 @@ public class ClienteHandler implements Runnable, ObservadorEstado {
             salida  = new PrintWriter(socket.getOutputStream(), true);
             entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
-            // Suscribirse al estado del juego (patrón Observer)
-            estado.agregarObservador(this);
-
             if (!esEspectador) {
-                jugador = estado.agregarJugador();
-                salida.println("BIENVENIDO " + jugador.getId());
-                System.out.println("[SERVIDOR] Jugador " + jugador.getId() + " conectado.");
+                runJugador();
             } else {
-                salida.println("ESPECTADOR");
-                System.out.println("[SERVIDOR] Espectador conectado.");
-            }
-
-            String mensaje;
-            while (conectado && (mensaje = entrada.readLine()) != null) {
-                if (!esEspectador) procesarMensaje(mensaje.trim());
+                runEspectador();
             }
 
         } catch (IOException e) {
             System.out.println("[SERVIDOR] Cliente desconectado.");
         } finally {
-            // Desuscribirse al desconectarse
-            estado.eliminarObservador(this);
+            if (estado != null) {
+                if (!esEspectador && partidaId >= 0) {
+                    // Al desconectarse el jugador: cierra la partida (notifica espectadores)
+                    estado.cerrar();
+                    servidor.eliminarPartida(partidaId);
+                }
+                estado.eliminarObservador(this);
+            }
             cerrar();
         }
     }
 
+    // ── FLUJO JUGADOR ───────────────────────────────────
+    private void runJugador() throws IOException {
+        estado.agregarObservador(this);
+        jugador = estado.agregarJugador();
+        salida.println("BIENVENIDO " + jugador.getId());
+        System.out.println("[SERVIDOR] Jugador " + jugador.getId() + " en partida " + partidaId);
+
+        String mensaje;
+        while (conectado && (mensaje = entrada.readLine()) != null) {
+            procesarMensaje(mensaje.trim());
+        }
+    }
+
+    // ── FLUJO ESPECTADOR ────────────────────────────────
+    private void runEspectador() throws IOException {
+        // Enviar lista de partidas disponibles
+        int numPartidas = servidor.enviarListaPartidas(salida);
+
+        if (numPartidas == 0) {
+            System.out.println("[SERVIDOR] Espectador sin partidas disponibles.");
+            return;
+        }
+
+        // Esperar comando VER <id> del cliente (30 s de timeout)
+        socket.setSoTimeout(30000);
+        String ver = entrada.readLine();
+        socket.setSoTimeout(0);
+
+        if (ver == null || !ver.toUpperCase().startsWith("VER ")) return;
+
+        int elegida;
+        try { elegida = Integer.parseInt(ver.substring(4).trim()); }
+        catch (NumberFormatException e) { return; }
+
+        estado = servidor.getPartida(elegida);
+        if (estado == null) {
+            salida.println("PARTIDA_NO_ENCONTRADA");
+            return;
+        }
+
+        estado.agregarObservador(this);
+        salida.println("ESPECTADOR");
+        System.out.println("[SERVIDOR] Espectador observando partida " + elegida);
+
+        // Mantener conexión activa; las actualizaciones llegan por actualizar()
+        String linea;
+        while (conectado && (linea = entrada.readLine()) != null) {
+            // espectadores no envían comandos de juego
+        }
+    }
+
+    // ── MENSAJES DEL JUGADOR ────────────────────────────
     private void procesarMensaje(String mensaje) {
         switch (mensaje.toUpperCase()) {
             case "MOVER_IZQ": estado.moverIzquierda(jugador.getId()); break;
@@ -69,13 +124,9 @@ public class ClienteHandler implements Runnable, ObservadorEstado {
         }
     }
 
-    // ── PATRÓN OBSERVER — recibe notificación del estado ─
+    // ── PATRÓN OBSERVER ─────────────────────────────────
     @Override
     public void actualizar(String estadoSerializado) {
-        enviarEstado(estadoSerializado);
-    }
-
-    public void enviarEstado(String estadoSerializado) {
         if (salida != null && conectado) {
             salida.print(estadoSerializado);
             salida.flush();
@@ -88,7 +139,6 @@ public class ClienteHandler implements Runnable, ObservadorEstado {
         catch (IOException e) { /* ignorar */ }
     }
 
-    public boolean isConectado()    { return conectado;    }
-    public boolean isEspectador()   { return esEspectador; }
-    public EstadoJuego getJuego()   { return estado;       }
+    public boolean isConectado()  { return conectado;    }
+    public boolean isEspectador() { return esEspectador; }
 }
