@@ -1,6 +1,64 @@
 #include "render.h"
 #include <stdio.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "../libs/stb_image.h"
+
+static SDL_Texture* texJugador  = NULL;
+static SDL_Texture* texCalamar  = NULL;
+static SDL_Texture* texCangrejo = NULL;
+static SDL_Texture* texPulpo    = NULL;
+static SDL_Texture* texOvni     = NULL;
+
+static SDL_Texture* cargarPNG(SDL_Renderer* r, const char* ruta) {
+    int w, h, canales;
+    unsigned char* datos = stbi_load(ruta, &w, &h, &canales, 4);
+    if (!datos) {
+        fprintf(stderr, "[RENDER] No se pudo cargar: %s\n", ruta);
+        return NULL;
+    }
+    SDL_Surface* sup = SDL_CreateRGBSurfaceFrom(
+        datos, w, h, 32, w * 4,
+        0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
+    SDL_Texture* tex = NULL;
+    if (sup) {
+        tex = SDL_CreateTextureFromSurface(r, sup);
+        SDL_FreeSurface(sup);
+    }
+    stbi_image_free(datos);
+    return tex;
+}
+
+int cargarTexturas(SDL_Renderer* renderizador) {
+    texJugador  = cargarPNG(renderizador, "assets/jugador.png");
+    texCalamar  = cargarPNG(renderizador, "assets/calamar.png");
+    texCangrejo = cargarPNG(renderizador, "assets/cangrejo.png");
+    texPulpo    = cargarPNG(renderizador, "assets/pulpo.png");
+    texOvni     = cargarPNG(renderizador, "assets/ovni.png");
+    return 1;
+}
+
+void liberarTexturas(void) {
+    if (texJugador)  SDL_DestroyTexture(texJugador);
+    if (texCalamar)  SDL_DestroyTexture(texCalamar);
+    if (texCangrejo) SDL_DestroyTexture(texCangrejo);
+    if (texPulpo)    SDL_DestroyTexture(texPulpo);
+    if (texOvni)     SDL_DestroyTexture(texOvni);
+    texJugador = texCalamar = texCangrejo = texPulpo = texOvni = NULL;
+}
+
+// Dibuja textura; si es NULL cae a rectangulo de color fallback.
+static void dibujarSprite(SDL_Renderer* r, SDL_Texture* tex,
+                          const SDL_Rect* rect,
+                          Uint8 cr, Uint8 cg, Uint8 cb) {
+    if (tex) {
+        SDL_RenderCopy(r, tex, NULL, rect);
+    } else {
+        SDL_SetRenderDrawColor(r, cr, cg, cb, 255);
+        SDL_RenderFillRect(r, rect);
+    }
+}
+
 // Fuente de pixeles 3x5 para digitos 0-9
 static const int FUENTE[10][5][3] = {
     {{1,1,1},{1,0,1},{1,0,1},{1,0,1},{1,1,1}}, // 0
@@ -42,16 +100,20 @@ void renderizarTodo(SDL_Renderer* renderizador,
     SDL_SetRenderDrawColor(renderizador, 0, 0, 0, 255);
     SDL_RenderClear(renderizador);
 
-    // Canon jugador 0 (blanco)
-    if (jugadores[0].activo) {
-        SDL_SetRenderDrawColor(renderizador, 255, 255, 255, 255);
-        SDL_RenderFillRect(renderizador, &jugadores[0].rect);
-    }
+    // Jugador 0 (sprite; tinte blanco por defecto)
+    if (jugadores[0].activo)
+        dibujarSprite(renderizador, texJugador, &jugadores[0].rect, 255, 255, 255);
 
-    // Canon jugador 1 (cyan — el segundo jugador en la misma partida)
+    // Jugador 1 (mismo sprite; tinte cyan)
     if (jugadores[1].activo) {
-        SDL_SetRenderDrawColor(renderizador, 0, 255, 255, 255);
-        SDL_RenderFillRect(renderizador, &jugadores[1].rect);
+        if (texJugador) {
+            SDL_SetTextureColorMod(texJugador, 0, 255, 255);
+            SDL_RenderCopy(renderizador, texJugador, NULL, &jugadores[1].rect);
+            SDL_SetTextureColorMod(texJugador, 255, 255, 255);
+        } else {
+            SDL_SetRenderDrawColor(renderizador, 0, 255, 255, 255);
+            SDL_RenderFillRect(renderizador, &jugadores[1].rect);
+        }
     }
 
     // Bala jugador 0 (amarilla)
@@ -77,26 +139,36 @@ void renderizarTodo(SDL_Renderer* renderizador,
     for (int f = 0; f < FILAS_ENEMIGOS; f++) {
         for (int c = 0; c < COLUMNAS_ENEMIGOS; c++) {
             if (!bloque->enemigos[f][c].activo) continue;
-            switch (bloque->enemigos[f][c].tipo) {
-                case TIPO_CALAMAR:  SDL_SetRenderDrawColor(renderizador, 255, 0,   0,   255); break;
-                case TIPO_CANGREJO: SDL_SetRenderDrawColor(renderizador, 0,   255, 0,   255); break;
-                case TIPO_PULPO:    SDL_SetRenderDrawColor(renderizador, 0,   0,   255, 255); break;
-                default:            SDL_SetRenderDrawColor(renderizador, 200, 200, 200, 255); break;
+            Enemigo* e = &bloque->enemigos[f][c];
+            switch (e->tipo) {
+                case TIPO_CALAMAR:
+                    dibujarSprite(renderizador, texCalamar,  &e->rect, 255, 0,   0);   break;
+                case TIPO_CANGREJO:
+                    dibujarSprite(renderizador, texCangrejo, &e->rect, 0,   255, 0);   break;
+                case TIPO_PULPO:
+                    dibujarSprite(renderizador, texPulpo,    &e->rect, 0,   0,   255); break;
+                default:
+                    SDL_SetRenderDrawColor(renderizador, 200, 200, 200, 255);
+                    SDL_RenderFillRect(renderizador, &e->rect);
             }
-            SDL_RenderFillRect(renderizador, &bloque->enemigos[f][c].rect);
         }
     }
 
     // Enemigos extra (creados por el admin con CREAR)
     for (int i = 0; i < bloque->numExtras; i++) {
         if (!bloque->extras[i].activo) continue;
-        switch (bloque->extras[i].tipo) {
-            case TIPO_CALAMAR:  SDL_SetRenderDrawColor(renderizador, 255, 0,   0,   255); break;
-            case TIPO_CANGREJO: SDL_SetRenderDrawColor(renderizador, 0,   255, 0,   255); break;
-            case TIPO_PULPO:    SDL_SetRenderDrawColor(renderizador, 0,   0,   255, 255); break;
-            default:            SDL_SetRenderDrawColor(renderizador, 200, 200, 200, 255); break;
+        Enemigo* e = &bloque->extras[i];
+        switch (e->tipo) {
+            case TIPO_CALAMAR:
+                dibujarSprite(renderizador, texCalamar,  &e->rect, 255, 0,   0);   break;
+            case TIPO_CANGREJO:
+                dibujarSprite(renderizador, texCangrejo, &e->rect, 0,   255, 0);   break;
+            case TIPO_PULPO:
+                dibujarSprite(renderizador, texPulpo,    &e->rect, 0,   0,   255); break;
+            default:
+                SDL_SetRenderDrawColor(renderizador, 200, 200, 200, 255);
+                SDL_RenderFillRect(renderizador, &e->rect);
         }
-        SDL_RenderFillRect(renderizador, &bloque->extras[i].rect);
     }
 
     // Bunkers (verdes, grilla de bloques destructibles)
@@ -105,22 +177,20 @@ void renderizarTodo(SDL_Renderer* renderizador,
         for (int f = 0; f < bunkers[i].filas && f < BUNKER_FILAS; f++) {
             for (int c = 0; c < bunkers[i].columnas && c < BUNKER_COLUMNAS; c++) {
                 if (!bunkers[i].bloques[f][c]) continue;
-                SDL_Rect r = {
+                SDL_Rect rr = {
                     bunkers[i].x + c * bunkers[i].lado,
                     bunkers[i].y + f * bunkers[i].lado,
                     bunkers[i].lado,
                     bunkers[i].lado
                 };
-                SDL_RenderFillRect(renderizador, &r);
+                SDL_RenderFillRect(renderizador, &rr);
             }
         }
     }
 
-    // OVNI (rojo brillante)
-    if (ovni->activo) {
-        SDL_SetRenderDrawColor(renderizador, 255, 50, 50, 255);
-        SDL_RenderFillRect(renderizador, &ovni->rect);
-    }
+    // OVNI
+    if (ovni->activo)
+        dibujarSprite(renderizador, texOvni, &ovni->rect, 255, 50, 50);
 
     // HUD jugador 0: puntaje en blanco arriba izquierda
     SDL_SetRenderDrawColor(renderizador, 255, 255, 255, 255);

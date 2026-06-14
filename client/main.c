@@ -42,6 +42,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    cargarTexturas(renderizador);
+
     // ── 2. ENTIDADES ─────────────────────────────────────
     // Partida compartida: hasta 2 jugadores en el mismo juego.
     // jugadores[0] = blanco, jugadores[1] = cyan.
@@ -119,6 +121,7 @@ int main(int argc, char *argv[])
     // ── 5. LIMPIAR ───────────────────────────────────────
     cerrarControlPico();
     cerrarConexion(&conexion);
+    liberarTexturas();
     SDL_DestroyRenderer(renderizador);
     SDL_DestroyWindow(ventana);
     SDL_Quit();

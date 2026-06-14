@@ -9,8 +9,9 @@
 #include "../logica/ovni.h"
 #include "../logica/bunker.h"
 
-// jugadores[0] = blanco, jugadores[1] = cyan.
-// Cada ventana ve ambos canones; solo controla el suyo (conexion->idJugador).
+int  cargarTexturas(SDL_Renderer* renderizador);
+void liberarTexturas(void);
+
 void renderizarTodo(SDL_Renderer* renderizador,
                     Jugador jugadores[],
                     Bala balas[],

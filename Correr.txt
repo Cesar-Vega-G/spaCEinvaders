@@ -19,8 +19,10 @@ gcc main.c \
     comunicacion/socket_cliente.c \
     comunicacion/parser.c \
     interfaz/render.c \
-    -o juego \
-    $(sdl2-config --cflags --libs) -lws2_32 -mwindows
+    -o juego.exe \
+    -Ilibs/SDL2/include \
+    -Llibs/SDL2/lib \
+    -lmingw32 -lSDL2main -lSDL2 -lws2_32 -mwindows
 
 
   cd "/c/Users/cesar/Documents/2026-S1/Paradigmas/spaCEinvaders/client"
