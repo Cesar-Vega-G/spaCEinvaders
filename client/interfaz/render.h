@@ -20,4 +20,6 @@ void renderizarTodo(SDL_Renderer* renderizador,
                     Ovni* ovni,
                     Bunker bunkers[]);
 
+int mostrarGameOver(SDL_Renderer* renderizador, int puntaje);
+
 #endif
