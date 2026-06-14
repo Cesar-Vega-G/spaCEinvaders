@@ -89,6 +89,7 @@ int main(int argc, char *argv[])
         }
         SDL_ShowWindow(ventana);
         SDL_RaiseWindow(ventana);
+        ShowWindow(GetConsoleWindow(), SW_HIDE);
 
         // ── ENTIDADES ─────────────────────────────────────────
         Jugador jugadores[2];
@@ -146,9 +147,12 @@ int main(int argc, char *argv[])
             cerrarControlPico();
         cerrarConexion(&conexion);
 
-        // Ocultar ventana mientras el jugador ve el menu de consola
-        if (continuar)
+        // Ocultar ventana SDL y mostrar consola para el menu
+        if (continuar) {
             SDL_HideWindow(ventana);
+            ShowWindow(GetConsoleWindow(), SW_SHOW);
+            SetForegroundWindow(GetConsoleWindow());
+        }
     }
 
     // ── LIMPIAR FINAL ─────────────────────────────────────────
