@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
             ventana = SDL_CreateWindow(
                 TITULO_JUEGO,
                 SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                1280, 960, 0);
+                960, 720, 0);
             if (!ventana) {
                 cerrarConexion(&conexion);
                 continuar = 0;
