@@ -9,7 +9,7 @@ public class Jugador {
     // Constantes
     public static final int ANCHO = 65;
     public static final int ALTO = 30;
-    public static final int VELOCIDAD = 10;
+    public static final int VELOCIDAD = 20;
     public static final int INICIO_X = 380;
     public static final int INICIO_Y = 810;
     public static final int VIDAS_INICIALES = 3;

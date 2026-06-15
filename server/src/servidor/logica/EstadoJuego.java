@@ -60,7 +60,7 @@ public class EstadoJuego {
         bunkers             = new ArrayList<>();
         ovni                = new Ovni();
         direccionBloque     = 1;
-        velocidadBloque     = 10;
+        velocidadBloque     = 5;
         contadorMovimiento  = 0;
         intervaloMovimiento = 5;
         contadorDisparoEnemigo = 0;

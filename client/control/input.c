@@ -25,7 +25,15 @@ void inicializarControlPico()
 
     if (puertoPico == INVALID_HANDLE_VALUE)
     {
-        SDL_Log("No se pudo abrir el puerto de la Pico: %s", PUERTO_PICO);
+        char msg[256];
+        snprintf(msg, sizeof(msg),
+            "No se pudo abrir %s (error %lu)\n\n"
+            "Posibles causas:\n"
+            "- Otro programa tiene el puerto abierto (Thonny, Arduino IDE)\n"
+            "- El Pico no esta conectado\n"
+            "- Puerto incorrecto en constantes.h",
+            PUERTO_PICO, GetLastError());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error Pico", msg, NULL);
         return;
     }
 
@@ -107,56 +115,20 @@ static void procesarComandoPico(Conexion *conexion)
 
     ClearCommError(puertoPico, &errores, &estado);
 
-    if (estado.cbInQue > 0)
-    {
-        printf("[PICO] Bytes disponibles: %lu\n", estado.cbInQue);
-        fflush(stdout);
-    }
-
     char dato;
     DWORD leidos = 0;
 
     while (estado.cbInQue > 0)
     {
-        if (!ReadFile(puertoPico, &dato, 1, &leidos, NULL))
-        {
-            printf("[PICO] ERROR leyendo puerto\n");
-            fflush(stdout);
+        if (!ReadFile(puertoPico, &dato, 1, &leidos, NULL) || leidos == 0)
             break;
-        }
-
-        if (leidos == 0)
-        {
-            break;
-        }
-
-        printf("[PICO] Dato recibido: %c\n", dato);
-        fflush(stdout);
 
         switch (dato)
         {
-        case 'I':
-            printf("[PICO] Enviando al servidor: MOVER_IZQ\n");
-            fflush(stdout);
-            enviarMensaje(conexion, "MOVER_IZQ");
-            break;
-
-        case 'D':
-            printf("[PICO] Enviando al servidor: MOVER_DER\n");
-            fflush(stdout);
-            enviarMensaje(conexion, "MOVER_DER");
-            break;
-
-        case 'F':
-            printf("[PICO] Enviando al servidor: DISPARAR\n");
-            fflush(stdout);
-            enviarMensaje(conexion, "DISPARAR");
-            break;
-
-        default:
-            printf("[PICO] Dato desconocido: %c\n", dato);
-            fflush(stdout);
-            break;
+        case 'I': enviarMensaje(conexion, "MOVER_IZQ"); break;
+        case 'D': enviarMensaje(conexion, "MOVER_DER"); break;
+        case 'F': enviarMensaje(conexion, "DISPARAR");  break;
+        default:  break;
         }
 
         ClearCommError(puertoPico, &errores, &estado);
@@ -176,49 +148,22 @@ void procesarInput(SDL_Event *evento, int *jugando, Conexion *conexion)
 
         if (evento->type == SDL_KEYDOWN)
         {
-            int id = conexion->idJugador;
+            SDL_Keycode sym = evento->key.keysym.sym;
 
-            switch (evento->key.keysym.sym)
-            {
-
-            // Jugador 0: A / D / ESPACIO
-            case SDLK_a:
-                if (id == 0)
-                    enviarMensaje(conexion, "MOVER_IZQ");
-                break;
-
-            case SDLK_d:
-                if (id == 0)
-                    enviarMensaje(conexion, "MOVER_DER");
-                break;
-
-            case SDLK_SPACE:
-                if (id == 0)
-                    enviarMensaje(conexion, "DISPARAR");
-                break;
-
-            // Jugador 1: flechas
-            case SDLK_LEFT:
-                if (id == 1)
-                    enviarMensaje(conexion, "MOVER_IZQ");
-                break;
-
-            case SDLK_RIGHT:
-                if (id == 1)
-                    enviarMensaje(conexion, "MOVER_DER");
-                break;
-
-            case SDLK_UP:
-                if (id == 1)
-                    enviarMensaje(conexion, "DISPARAR");
-                break;
-
-            case SDLK_ESCAPE:
+            if (sym == SDLK_ESCAPE) {
                 *jugando = 0;
-                break;
+            }
 
-            default:
-                break;
+            // Controles de teclado solo si el Pico no está conectado
+            if (puertoPico == INVALID_HANDLE_VALUE)
+            {
+                switch (sym)
+                {
+                case SDLK_a:     enviarMensaje(conexion, "MOVER_IZQ"); break;
+                case SDLK_d:     enviarMensaje(conexion, "MOVER_DER"); break;
+                case SDLK_SPACE: enviarMensaje(conexion, "DISPARAR");  break;
+                default: break;
+                }
             }
         }
     }

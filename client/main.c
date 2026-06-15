@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
             ventana = SDL_CreateWindow(
                 TITULO_JUEGO,
                 SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                ANCHO_PANTALLA, ALTO_PANTALLA, 0);
+                1280, 960, 0);
             if (!ventana) {
                 cerrarConexion(&conexion);
                 continuar = 0;
@@ -85,11 +85,11 @@ int main(int argc, char *argv[])
                 continuar = 0;
                 break;
             }
+            SDL_RenderSetLogicalSize(renderizador, ANCHO_PANTALLA, ALTO_PANTALLA);
             cargarTexturas(renderizador);
         }
         SDL_ShowWindow(ventana);
         SDL_RaiseWindow(ventana);
-        ShowWindow(GetConsoleWindow(), SW_HIDE);
 
         // ── ENTIDADES ─────────────────────────────────────────
         Jugador jugadores[2];
@@ -114,6 +114,9 @@ int main(int argc, char *argv[])
         // ── CONTROL PICO ──────────────────────────────────────
         if (usarPico)
             inicializarControlPico();
+
+        // Ocultar consola después de inicializar el Pico
+        ShowWindow(GetConsoleWindow(), SW_HIDE);
 
         // ── GAME LOOP ─────────────────────────────────────────
         int jugando = 1;

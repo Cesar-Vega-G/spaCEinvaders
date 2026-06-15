@@ -7,7 +7,7 @@ public class Bala {
 
     public static final int ANCHO     = 5;
     public static final int ALTO      = 15;
-    public static final int VELOCIDAD = 15;
+    public static final int VELOCIDAD = 25;
 
     private int x, y;
     private boolean activa;
