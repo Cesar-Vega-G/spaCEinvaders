@@ -6,9 +6,20 @@ import java.util.*;
 import servidor.logica.EstadoJuego;
 
 /**
- * COMUNICACION — Servidor de sockets.
- * Gestiona N partidas independientes: 1 jugador por partida + espectadores.
- * Los espectadores eligen qué partida observar mediante el comando VER.
+ * COMUNICACION — Servidor de sockets TCP para spaCEinvaders.
+ *
+ * Responsabilidades:
+ *   · Aceptar conexiones de jugadores y espectadores en el puerto 5000.
+ *   · Gestionar N partidas independientes (una por jugador conectado).
+ *   · Ejecutar el game loop a 30 FPS y delegar a EstadoJuego.actualizar().
+ *   · Controlar slots: máximo 1 jugador de teclado y 1 de Pico simultáneamente.
+ *   · Permitir comandos de administrador por consola (CREAR, VELOCIDAD, etc.).
+ *
+ * Hilos:
+ *   · main          → gameLoop() (tick de 30 FPS)
+ *   · aceptarConexiones → escucha nuevas conexiones (bloqueante)
+ *   · manejarAdmin  → lee comandos de consola
+ *   · 1 hilo por ClienteHandler (jugador o espectador)
  */
 public class Servidor {
 
@@ -22,7 +33,7 @@ public class Servidor {
     private int     nextId    = 0;
     private boolean corriendo = true;
 
-    // Un slot por tipo de control; impide duplicados
+    /* Slots de control: solo un jugador por tipo a la vez. */
     private boolean tecladoConectado = false;
     private boolean picoConectado    = false;
 
@@ -35,16 +46,17 @@ public class Servidor {
 
         new Thread(this::aceptarConexiones).start();
         new Thread(this::manejarAdmin).start();
-        gameLoop();
+        gameLoop(); /* bloquea el hilo principal */
     }
 
-    // ── ACEPTAR CONEXIONES ──────────────────────────────
+    /* ── ACEPTAR CONEXIONES ─────────────────────────────────────────────── */
     private void aceptarConexiones() {
         while (corriendo) {
             try {
                 Socket socket = serverSocket.accept();
                 String rol = leerRol(socket);
 
+                /* Los espectadores no ocupan slot; se registran en cualquier partida. */
                 if (rol.equalsIgnoreCase("ESPECTADOR")) {
                     System.out.println("[SERVIDOR] Espectador conectado");
                     ClienteHandler h = new ClienteHandler(socket, null, true, this, null);
@@ -53,7 +65,6 @@ public class Servidor {
                     continue;
                 }
 
-                // Determinar tipo de control
                 boolean esPico = rol.equalsIgnoreCase("JUGADOR_PICO");
                 String tipo    = esPico ? "PICO" : "TECLADO";
 
@@ -61,6 +72,7 @@ public class Servidor {
                 synchronized (partidas) {
                     boolean ocupado = esPico ? picoConectado : tecladoConectado;
                     if (ocupado) {
+                        /* Rechazar con SLOT_OCUPADO y cerrar el socket inmediatamente. */
                         try {
                             PrintWriter pw = new PrintWriter(socket.getOutputStream(), true);
                             pw.println("SLOT_OCUPADO");
@@ -69,6 +81,7 @@ public class Servidor {
                         System.out.println("[SERVIDOR] Slot " + tipo + " ocupado - rechazo");
                         continue;
                     }
+                    /* Reservar el slot y crear una nueva partida independiente. */
                     if (esPico) picoConectado = true;
                     else tecladoConectado = true;
 
@@ -89,6 +102,7 @@ public class Servidor {
         }
     }
 
+    /* Libera el slot cuando el jugador se desconecta (llamado por ClienteHandler). */
     public void liberarSlot(String tipo) {
         if (tipo == null) return;
         synchronized (partidas) {
@@ -98,6 +112,7 @@ public class Servidor {
         System.out.println("[SERVIDOR] Slot " + tipo + " liberado");
     }
 
+    /* Lee el rol enviado por el cliente al conectarse (timeout 3 s). */
     private String leerRol(Socket socket) {
         try {
             socket.setSoTimeout(3000);
@@ -113,7 +128,7 @@ public class Servidor {
         }
     }
 
-    // ── ACCESO SEGURO A PARTIDAS (para ClienteHandler) ──
+    /* ── ACCESO SEGURO A PARTIDAS (para ClienteHandler) ─────────────────── */
     public int enviarListaPartidas(PrintWriter salida) {
         synchronized (partidas) {
             salida.println("PARTIDAS " + partidas.size());
@@ -132,15 +147,17 @@ public class Servidor {
         System.out.println("[SERVIDOR] Partida " + id + " eliminada");
     }
 
-    // ── GAME LOOP ───────────────────────────────────────
+    /* ── GAME LOOP (30 FPS) ─────────────────────────────────────────────── */
     private void gameLoop() {
         while (corriendo) {
             long inicio = System.currentTimeMillis();
 
+            /* Snapshot para evitar ConcurrentModificationException durante actualizar(). */
             List<EstadoJuego> snapshot;
             synchronized (partidas) { snapshot = new ArrayList<>(partidas.values()); }
             for (EstadoJuego p : snapshot) p.actualizar();
 
+            /* Limpiar handlers desconectados. */
             synchronized (clientes) { clientes.removeIf(c -> !c.isConectado()); }
 
             long espera = MS_POR_FRAME - (System.currentTimeMillis() - inicio);
@@ -150,7 +167,7 @@ public class Servidor {
         }
     }
 
-    // ── ADMIN ───────────────────────────────────────────
+    /* ── COMANDOS DE ADMINISTRADOR ──────────────────────────────────────── */
     private void manejarAdmin() {
         Scanner scanner = new Scanner(System.in);
         System.out.println("Admin listo. Comandos: CREAR x y tipo | OVNI dir pts | VELOCIDAD n | BUNKERS n%");
@@ -165,24 +182,24 @@ public class Servidor {
                 synchronized (partidas) { snap = new ArrayList<>(partidas.values()); }
 
                 switch (p[0].toUpperCase()) {
-                    case "CREAR":
+                    case "CREAR":     /* Crear enemigo extra en (x,y) de tipo CALAMAR/CANGREJO/PULPO */
                         if (p.length >= 4)
                             for (EstadoJuego eg : snap)
                                 eg.crearEnemigo(Integer.parseInt(p[1]), Integer.parseInt(p[2]), p[3]);
                         break;
-                    case "OVNI":
+                    case "OVNI":      /* Lanzar OVNI con dirección (I-D / D-I) y puntos */
                         if (p.length >= 3) {
                             int dir = p[1].equalsIgnoreCase("I-D") ? 1 : -1;
                             for (EstadoJuego eg : snap)
                                 eg.crearOvni(dir, Integer.parseInt(p[2]));
                         }
                         break;
-                    case "VELOCIDAD":
+                    case "VELOCIDAD": /* Cambiar velocidad del bloque enemigo en píxeles */
                         if (p.length >= 2)
                             for (EstadoJuego eg : snap)
                                 eg.cambiarVelocidad(Integer.parseInt(p[1]));
                         break;
-                    case "BUNKERS":
+                    case "BUNKERS":   /* Reconstruir/destruir bunkers: 100% = completos, 0% = destruidos */
                         if (p.length >= 2) {
                             String pct = p[1].replace("%", "").trim();
                             for (EstadoJuego eg : snap)

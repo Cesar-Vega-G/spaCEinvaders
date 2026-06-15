@@ -1,11 +1,17 @@
+/**
+ * LÓGICA CLIENTE — Bloque de enemigos.
+ *
+ * El cliente inicializa la cuadrícula con valores por defecto.  El servidor
+ * es quien mueve el bloque y destruye enemigos; parser.c sobreescribe las
+ * posiciones y el flag activo de cada celda con los datos recibidos en cada
+ * frame.  Los "extras" son los enemigos creados con el comando admin CREAR.
+ */
 #include "enemigo.h"
 
-// Inicializa el bloque con tipos y posiciones por defecto.
-// El servidor sobrescribe posiciones y estado via parser en el game loop.
 BloqueEnemigos crearBloque() {
     BloqueEnemigos bloque;
 
-    // tipo_por_fila: calamar(rojo), cangrejo(verde)x2, pulpo(azul)x2
+    /* Distribución clásica de Space Invaders: calamar arriba, pulpo abajo. */
     int tipo_por_fila[]   = {TIPO_CALAMAR, TIPO_CANGREJO, TIPO_CANGREJO, TIPO_PULPO, TIPO_PULPO};
     int puntos_por_fila[] = {10, 20, 20, 40, 40};
 
@@ -21,7 +27,7 @@ BloqueEnemigos crearBloque() {
         }
     }
 
-    // Inicializar arreglo de extras (vacios al inicio)
+    /* Arreglo de extras vacío al inicio; parser.c los rellena al recibir "EXTRA". */
     bloque.numExtras = 0;
     for (int i = 0; i < MAX_EXTRAS; i++) {
         bloque.extras[i].activo = 0;

@@ -1,3 +1,21 @@
+/*
+ * parser.c — Parsea el estado serializado que envía el servidor cada frame.
+ *
+ * El servidor serializa el estado completo como texto plano, una entidad
+ * por línea, dentro de un bloque "INICIO_ESTADO\n ... FIN_ESTADO\n".
+ * Esta función procesa ese texto y actualiza los structs locales del cliente.
+ *
+ * Formato del protocolo (cada línea):
+ *   JUGADOR   id x y vidas puntaje
+ *   BALA      id x y activa
+ *   BALA_ENEMIGA id x y activa
+ *   ENEMIGO   fila col x y activo tipo
+ *   EXTRA     id x y activo tipo
+ *   BUNKER    id x y filas cols lado bitmap
+ *   OVNI      x y activo puntos
+ *   JUEGO_ACTIVO  0|1
+ */
+
 #include "parser.h"
 #include <stdio.h>
 #include <string.h>
@@ -14,6 +32,7 @@ void parsearEstado(const char* estado,
     char linea[512];
     const char* ptr = estado;
 
+    /* Procesar el buffer línea por línea. */
     while (*ptr) {
         int i = 0;
         while (*ptr && *ptr != '\n' && i < 511) linea[i++] = *ptr++;
@@ -23,19 +42,19 @@ void parsearEstado(const char* estado,
 
         int x, y, activo, puntos, id, vidas;
 
-        // ── BIENVENIDO id ────────────────────────────────
+        /* BIENVENIDO: el servidor confirmó la conexión y asignó un id. */
         if (sscanf(linea, "BIENVENIDO %d", &id) == 1) {
             conexion->idJugador = id;
             continue;
         }
 
-        // ── ESPECTADOR ───────────────────────────────────
+        /* ESPECTADOR: conexión confirmada como espectador (sin id de jugador). */
         if (strncmp(linea, "ESPECTADOR", 10) == 0) {
             conexion->idJugador = -1;
             continue;
         }
 
-        // ── JUGADOR id x y vidas puntaje ─────────────────
+        /* JUGADOR: posición, vidas y puntaje actualizados. */
         if (sscanf(linea, "JUGADOR %d %d %d %d %d", &id, &x, &y, &vidas, &puntos) == 5) {
             if (id == 0 || id == 1) {
                 jugadores[id].rect.x = x;
@@ -47,8 +66,10 @@ void parsearEstado(const char* estado,
             continue;
         }
 
-        // ── BALA_ENEMIGA id x y activa ───────────────────
-        // (chequear ANTES que BALA porque "BALA" es prefijo)
+        /*
+         * BALA_ENEMIGA se verifica ANTES que BALA porque "BALA" es prefijo
+         * de "BALA_ENEMIGA"; sscanf con "BALA %d" también matchearía.
+         */
         if (sscanf(linea, "BALA_ENEMIGA %d %d %d %d", &id, &x, &y, &activo) == 4) {
             if (id >= 0 && id < MAX_BALAS_ENEMIGAS) {
                 balasEnemigas[id].rect.x = x;
@@ -58,7 +79,7 @@ void parsearEstado(const char* estado,
             continue;
         }
 
-        // ── BALA id x y activa ───────────────────────────
+        /* BALA: posición y estado de la bala de cada jugador. */
         if (sscanf(linea, "BALA %d %d %d %d", &id, &x, &y, &activo) == 4) {
             if (id == 0 || id == 1) {
                 balas[id].rect.x = x;
@@ -68,7 +89,7 @@ void parsearEstado(const char* estado,
             continue;
         }
 
-        // ── ENEMIGO fila col x y activo tipo ─────────────
+        /* ENEMIGO: actualiza posición y estado de la grilla principal. */
         int fila, col;
         char tipo[32];
         if (sscanf(linea, "ENEMIGO %d %d %d %d %d %s", &fila, &col, &x, &y, &activo, tipo) == 6) {
@@ -80,8 +101,7 @@ void parsearEstado(const char* estado,
             continue;
         }
 
-        // ── EXTRA id x y activo tipo ──────────────────────
-        // Enemigos creados por el admin con el comando CREAR
+        /* EXTRA: enemigos creados dinámicamente por el administrador del servidor. */
         int idExtra;
         if (sscanf(linea, "EXTRA %d %d %d %d %s", &idExtra, &x, &y, &activo, tipo) == 5) {
             if (idExtra >= 0 && idExtra < MAX_EXTRAS) {
@@ -98,7 +118,10 @@ void parsearEstado(const char* estado,
             continue;
         }
 
-        // ── BUNKER id x y filas cols lado bitmap ─────────
+        /*
+         * BUNKER: el bitmap codifica qué bloques del búnker siguen intactos.
+         * Cada carácter '1'/'0' representa un bloque (fila*cols + col).
+         */
         int bid, bfilas, bcols, blado;
         char bitmap[64];
         if (sscanf(linea, "BUNKER %d %d %d %d %d %d %63s",
@@ -120,7 +143,7 @@ void parsearEstado(const char* estado,
             continue;
         }
 
-        // ── OVNI x y activo puntos ────────────────────────
+        /* OVNI: nave especial de bonus que aparece periódicamente. */
         if (sscanf(linea, "OVNI %d %d %d %d", &x, &y, &activo, &puntos) == 4) {
             ovni->rect.x = x;
             ovni->rect.y = y;
@@ -129,7 +152,7 @@ void parsearEstado(const char* estado,
             continue;
         }
 
-        // ── JUEGO_ACTIVO 0/1 ──────────────────────────────
+        /* JUEGO_ACTIVO 0: el servidor terminó la partida → salir del game loop. */
         if (sscanf(linea, "JUEGO_ACTIVO %d", &activo) == 1) {
             if (activo == 0) *jugando = 0;
         }

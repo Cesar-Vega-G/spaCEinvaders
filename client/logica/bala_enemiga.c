@@ -1,6 +1,12 @@
+/**
+ * LÓGICA CLIENTE — Bala enemiga.
+ *
+ * Pool de MAX_BALAS_ENEMIGAS instancias inicializadas inactivas.
+ * El servidor mantiene el mismo pool y envía el estado (id, x, y, activa)
+ * de cada bala en la serialización; parser.c actualiza los structs aquí.
+ */
 #include "bala_enemiga.h"
 
-// Inicializa el struct. El estado real viene del servidor.
 BalaEnemiga crearBalaEnemiga() {
     BalaEnemiga b;
     b.rect.x = 0;

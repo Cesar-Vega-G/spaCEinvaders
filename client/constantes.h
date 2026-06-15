@@ -50,7 +50,7 @@
 
 // Control
 #define USAR_CONTROL_PICO 1
-#define PUERTO_PICO "\\\\.\\COM15"
+#define PUERTO_PICO "\\\\.\\COM6"
 #define BAUDIOS_PICO 115200
 
 #endif

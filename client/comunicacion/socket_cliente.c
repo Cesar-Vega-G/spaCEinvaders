@@ -1,8 +1,22 @@
+/*
+ * socket_cliente.c — Comunicación TCP con el servidor Java.
+ *
+ * Protocolo de conexión:
+ *   Cliente → Servidor : "JUGADOR_TECLADO\n" | "JUGADOR_PICO\n" | "ESPECTADOR\n"
+ *   Servidor → Cliente : "BIENVENIDO id\n"   (jugadores)
+ *                      | "SLOT_OCUPADO\n"     (si ya hay un jugador de ese tipo)
+ *                      | "PARTIDAS n\n"       (espectadores)
+ *
+ * El socket opera en modo NO BLOQUEANTE durante el game loop para que
+ * recv() retorne inmediatamente cuando no hay datos. Solo se cambia
+ * a BLOQUEANTE durante el handshake inicial (verificarSlot / elegirPartida).
+ */
+
 #include "socket_cliente.h"
 #include <stdio.h>
 #include <string.h>
 
-// ── CREAR CONEXION ──────────────────────────────────
+/* ── CREAR CONEXIÓN ─────────────────────────────────────────────────────── */
 Conexion crearConexion() {
     Conexion conexion;
     conexion.conectado    = 0;
@@ -22,26 +36,30 @@ Conexion crearConexion() {
         return conexion;
     }
 
+    /* Modo no bloqueante: recv() durante el game loop no congela el hilo. */
     u_long modo = 1;
     ioctlsocket(conexion.socket, FIONBIO, &modo);
 
     return conexion;
 }
 
-// ── CONECTAR AL SERVIDOR ────────────────────────────
+/* ── CONECTAR AL SERVIDOR ────────────────────────────────────────────────── */
 int conectarServidor(Conexion* conexion, const char* ip, int puerto, int usarPico) {
     struct sockaddr_in direccion;
     direccion.sin_family      = AF_INET;
     direccion.sin_port        = htons(puerto);
     direccion.sin_addr.s_addr = inet_addr(ip);
 
+    /* connect() en socket no bloqueante retorna inmediatamente (WSAEWOULDBLOCK).
+     * El SDL_Delay da tiempo al OS para completar el handshake TCP de 3 vías. */
     connect(conexion->socket, (struct sockaddr*)&direccion, sizeof(direccion));
-    SDL_Delay(100);  // Dar tiempo a que el OS complete el handshake TCP
+    SDL_Delay(100);
 
+    /* Informar al servidor qué rol tomará este cliente. */
     const char* rol;
-    if (conexion->esEspectador)      rol = "ESPECTADOR\n";
-    else if (usarPico)               rol = "JUGADOR_PICO\n";
-    else                             rol = "JUGADOR_TECLADO\n";
+    if (conexion->esEspectador)  rol = "ESPECTADOR\n";
+    else if (usarPico)           rol = "JUGADOR_PICO\n";
+    else                         rol = "JUGADOR_TECLADO\n";
 
     send(conexion->socket, rol, strlen(rol), 0);
 
@@ -49,16 +67,22 @@ int conectarServidor(Conexion* conexion, const char* ip, int puerto, int usarPic
     return 1;
 }
 
-// ── VERIFICAR SLOT ──────────────────────────────────
-// Lee la primera respuesta del servidor (BIENVENIDO X o SLOT_OCUPADO).
-// Devuelve 1 si OK (y setea idJugador), 0 si el slot ya está ocupado.
+/* ── VERIFICAR SLOT ──────────────────────────────────────────────────────── */
+/*
+ * Lee la primera línea que envía el servidor después del handshake.
+ * Puede ser "BIENVENIDO id" (slot libre) o "SLOT_OCUPADO" (rechazado).
+ * Retorna 1 si el jugador fue aceptado, 0 si fue rechazado.
+ *
+ * Se cambia temporalmente a modo BLOQUEANTE con timeout de 3 s para
+ * leer carácter a carácter sin espera activa.
+ */
 int verificarSlot(Conexion* conexion) {
-    // Cambiar a bloqueante con timeout de 3 s
     u_long bloqueante = 0;
     ioctlsocket(conexion->socket, FIONBIO, &bloqueante);
     DWORD tmo = 3000;
     setsockopt(conexion->socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tmo, sizeof(tmo));
 
+    /* Leer una línea completa carácter a carácter. */
     char linea[256];
     int i = 0;
     char c;
@@ -70,7 +94,7 @@ int verificarSlot(Conexion* conexion) {
     }
     linea[i] = '\0';
 
-    // Volver a no-bloqueante sin timeout
+    /* Restaurar modo no bloqueante para el game loop. */
     u_long nb = 1;
     ioctlsocket(conexion->socket, FIONBIO, &nb);
     DWORD noTmo = 0;
@@ -78,7 +102,7 @@ int verificarSlot(Conexion* conexion) {
 
     if (strncmp(linea, "SLOT_OCUPADO", 12) == 0) return 0;
 
-    // "BIENVENIDO X" — extraer id
+    /* Extraer el id asignado ("BIENVENIDO 0" o "BIENVENIDO 1"). */
     int id;
     if (sscanf(linea, "BIENVENIDO %d", &id) == 1)
         conexion->idJugador = id;
@@ -86,8 +110,9 @@ int verificarSlot(Conexion* conexion) {
     return 1;
 }
 
-// ── ELEGIR PARTIDA (solo espectadores) ─────────────
-// Lee una línea del socket bloqueante, carácter a carácter.
+/* ── ELEGIR PARTIDA (solo espectadores) ──────────────────────────────────── */
+
+/* Lee una línea completa del socket bloqueante carácter a carácter. */
 static void leerLinea(SOCKET s, char* buf, int maxLen) {
     int i = 0;
     char c;
@@ -100,19 +125,22 @@ static void leerLinea(SOCKET s, char* buf, int maxLen) {
     buf[i] = '\0';
 }
 
+/*
+ * El servidor envía la lista de partidas activas:
+ *   "PARTIDAS n\n"
+ *   "PARTIDA id\n"  (n veces)
+ * El espectador elige una y envía "VER id\n".
+ */
 int elegirPartida(Conexion* conexion) {
-    // Cambiar a modo bloqueante para leer la lista del servidor
     u_long bloqueante = 0;
     ioctlsocket(conexion->socket, FIONBIO, &bloqueante);
 
-    // Leer "PARTIDAS n"
     char linea[256];
     leerLinea(conexion->socket, linea, sizeof(linea));
 
     int n = 0;
     sscanf(linea, "PARTIDAS %d", &n);
 
-    // Leer cada "PARTIDA id"
     int ids[64];
     for (int i = 0; i < n && i < 64; i++) {
         char pl[256];
@@ -121,7 +149,6 @@ int elegirPartida(Conexion* conexion) {
         sscanf(pl, "PARTIDA %d", &ids[i]);
     }
 
-    // Volver a modo no bloqueante
     u_long noBloqueante = 1;
     ioctlsocket(conexion->socket, FIONBIO, &noBloqueante);
 
@@ -151,14 +178,20 @@ int elegirPartida(Conexion* conexion) {
     return 1;
 }
 
-// ── ENVIAR MENSAJE ──────────────────────────────────
+/* ── ENVIAR MENSAJE ──────────────────────────────────────────────────────── */
+/* Envía un comando de juego al servidor (ej. "MOVER_IZQ"). */
 void enviarMensaje(Conexion* conexion, const char* mensaje) {
     if (!conexion->conectado) return;
     send(conexion->socket, mensaje, strlen(mensaje), 0);
     send(conexion->socket, "\n", 1, 0);
 }
 
-// ── RECIBIR ESTADO ──────────────────────────────────
+/* ── RECIBIR ESTADO ──────────────────────────────────────────────────────── */
+/*
+ * Intenta leer el estado serializado del servidor (no bloqueante).
+ * El servidor envía un bloque "INICIO_ESTADO\n...\nFIN_ESTADO\n" por frame.
+ * Si no hay datos disponibles, retorna 0 sin bloquear el game loop.
+ */
 int recibirEstado(Conexion* conexion, char* buffer, int tamano) {
     if (!conexion->conectado) return 0;
     int bytesRecibidos = recv(conexion->socket, buffer, tamano - 1, 0);
@@ -169,8 +202,8 @@ int recibirEstado(Conexion* conexion, char* buffer, int tamano) {
     return 0;
 }
 
-
-// ── CERRAR CONEXION ─────────────────────────────────
+/* ── CERRAR CONEXIÓN ─────────────────────────────────────────────────────── */
+/* Cierra el socket; el servidor detecta EOF y libera el slot del jugador. */
 void cerrarConexion(Conexion* conexion) {
     if (conexion->conectado) {
         closesocket(conexion->socket);

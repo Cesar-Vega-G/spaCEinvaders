@@ -1,7 +1,13 @@
+/**
+ * LÓGICA CLIENTE — Jugador.
+ *
+ * El cliente no tiene física propia: el servidor calcula posición, vidas y
+ * puntaje y los envía cada frame.  crearJugador() solo inicializa el struct
+ * con valores por defecto; el parser.c sobreescribe los campos en el bucle
+ * principal con los datos reales del servidor.
+ */
 #include "jugador.h"
 
-// Inicializa el struct del jugador con valores por defecto.
-// La posicion real viene del servidor via parser.
 Jugador crearJugador() {
     Jugador j;
     j.rect.x    = INICIO_X_JUGADOR;
@@ -11,6 +17,8 @@ Jugador crearJugador() {
     j.velocidad = VELOCIDAD_JUGADOR;
     j.vidas     = 3;
     j.puntaje   = 0;
-    j.activo    = 0;  // el servidor lo activa cuando ese jugador conecta
+    /* activo=0: el jugador no se renderiza hasta que el servidor confirme
+     * su existencia con la primera línea "JUGADOR id x y vidas puntaje". */
+    j.activo    = 0;
     return j;
 }

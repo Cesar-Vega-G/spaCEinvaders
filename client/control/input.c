@@ -1,3 +1,15 @@
+/*
+ * input.c — Manejo de entrada del jugador.
+ *
+ * Soporta dos modos de control mutuamente excluyentes:
+ *   · Teclado (A/D/ESPACIO): activo cuando el Pico NO está conectado.
+ *   · Raspberry Pi Pico vía puerto serial (COM15): envía caracteres
+ *     'I' (izquierda), 'D' (derecha), 'F' (fuego).
+ *
+ * Cuando el Pico está conectado el teclado queda deshabilitado para
+ * controles de juego; ESC sigue funcionando para salir.
+ */
+
 #include "input.h"
 #include "../constantes.h"
 #include <stdio.h>
@@ -6,18 +18,21 @@
 #include <windows.h>
 #endif
 
+/* Handle del puerto serial del Pico; INVALID_HANDLE_VALUE = no conectado. */
 #ifdef _WIN32
 static HANDLE puertoPico = INVALID_HANDLE_VALUE;
 #endif
 
+/* ── INICIALIZAR CONTROL PICO ────────────────────────────────────────────── */
 void inicializarControlPico()
 {
 #if USAR_CONTROL_PICO
 #ifdef _WIN32
+    /* Abrir el puerto serial en modo lectura exclusiva. */
     puertoPico = CreateFileA(
         PUERTO_PICO,
         GENERIC_READ,
-        0,
+        0,           /* sin compartir: otro proceso no puede abrir el mismo puerto */
         NULL,
         OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL,
@@ -25,6 +40,7 @@ void inicializarControlPico()
 
     if (puertoPico == INVALID_HANDLE_VALUE)
     {
+        /* Mostrar popup con el error exacto (código Win32) para facilitar el debug. */
         char msg[256];
         snprintf(msg, sizeof(msg),
             "No se pudo abrir %s (error %lu)\n\n"
@@ -37,6 +53,7 @@ void inicializarControlPico()
         return;
     }
 
+    /* Configurar baudios, bits de datos, paridad y stop bits. */
     DCB config;
     SecureZeroMemory(&config, sizeof(config));
     config.DCBlength = sizeof(config);
@@ -52,7 +69,7 @@ void inicializarControlPico()
     config.BaudRate = BAUDIOS_PICO;
     config.ByteSize = 8;
     config.StopBits = ONESTOPBIT;
-    config.Parity = NOPARITY;
+    config.Parity   = NOPARITY;
 
     if (!SetCommState(puertoPico, &config))
     {
@@ -62,27 +79,26 @@ void inicializarControlPico()
         return;
     }
 
+    /* Timeouts mínimos: leer sin bloquear el game loop. */
     COMMTIMEOUTS tiempos;
     SecureZeroMemory(&tiempos, sizeof(tiempos));
-
-    tiempos.ReadIntervalTimeout = 1;
-    tiempos.ReadTotalTimeoutConstant = 1;
-    tiempos.ReadTotalTimeoutMultiplier = 1;
-
+    tiempos.ReadIntervalTimeout         = 1;
+    tiempos.ReadTotalTimeoutConstant    = 1;
+    tiempos.ReadTotalTimeoutMultiplier  = 1;
     SetCommTimeouts(puertoPico, &tiempos);
 
-    // Limpia datos viejos y activa señales de control del puerto serial
+    /* Limpiar buffer y activar señales DTR/RTS para que el Pico detecte la conexión. */
     PurgeComm(puertoPico, PURGE_RXCLEAR | PURGE_TXCLEAR);
     EscapeCommFunction(puertoPico, SETDTR);
     EscapeCommFunction(puertoPico, SETRTS);
 
     printf("[PICO] Control Pico conectado en %s\n", PUERTO_PICO);
     fflush(stdout);
-    SDL_Log("Control Pico conectado en %s", PUERTO_PICO);
 #endif
 #endif
 }
 
+/* ── CERRAR CONTROL PICO ─────────────────────────────────────────────────── */
 void cerrarControlPico()
 {
 #if USAR_CONTROL_PICO
@@ -96,28 +112,27 @@ void cerrarControlPico()
 #endif
 }
 
+/* ── PROCESAR COMANDOS DEL PICO ──────────────────────────────────────────── */
+/*
+ * Lee todos los bytes disponibles en el buffer serial del Pico y traduce
+ * cada carácter a un comando de juego enviado al servidor.
+ * Caracteres esperados: 'I' = izquierda, 'D' = derecha, 'F' = fuego.
+ */
 static void procesarComandoPico(Conexion *conexion)
 {
 #if USAR_CONTROL_PICO
 #ifdef _WIN32
-    if (puertoPico == INVALID_HANDLE_VALUE)
-    {
-        return;
-    }
-
-    if (conexion->idJugador < 0)
-    {
-        return;
-    }
+    if (puertoPico == INVALID_HANDLE_VALUE) return;
+    if (conexion->idJugador < 0) return; /* espectadores no envían comandos */
 
     DWORD errores;
     COMSTAT estado;
-
     ClearCommError(puertoPico, &errores, &estado);
 
     char dato;
     DWORD leidos = 0;
 
+    /* Vaciar el buffer serial: procesar todos los bytes acumulados. */
     while (estado.cbInQue > 0)
     {
         if (!ReadFile(puertoPico, &dato, 1, &leidos, NULL) || leidos == 0)
@@ -137,24 +152,26 @@ static void procesarComandoPico(Conexion *conexion)
 #endif
 }
 
+/* ── PROCESAR INPUT (teclado + Pico) ─────────────────────────────────────── */
 void procesarInput(SDL_Event *evento, int *jugando, Conexion *conexion)
 {
     while (SDL_PollEvent(evento))
     {
         if (evento->type == SDL_QUIT)
-        {
             *jugando = 0;
-        }
 
         if (evento->type == SDL_KEYDOWN)
         {
             SDL_Keycode sym = evento->key.keysym.sym;
 
-            if (sym == SDLK_ESCAPE) {
+            /* ESC siempre disponible para salir, incluso con Pico activo. */
+            if (sym == SDLK_ESCAPE)
                 *jugando = 0;
-            }
 
-            // Controles de teclado solo si el Pico no está conectado
+            /*
+             * Controles de teclado habilitados solo cuando el Pico NO está
+             * conectado, para evitar que ambos controles interfieran.
+             */
             if (puertoPico == INVALID_HANDLE_VALUE)
             {
                 switch (sym)
@@ -168,5 +185,6 @@ void procesarInput(SDL_Event *evento, int *jugando, Conexion *conexion)
         }
     }
 
+    /* Procesar los datos del Pico después de los eventos SDL. */
     procesarComandoPico(conexion);
 }
